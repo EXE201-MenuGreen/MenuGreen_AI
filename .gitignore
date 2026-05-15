@@ -14,3 +14,5 @@ tools/training/dist/
 *.pt
 *.pth
 *.safetensors
+
+runtime/models/intent_onnx/
