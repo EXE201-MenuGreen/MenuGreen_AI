@@ -1,0 +1,16 @@
+﻿.venv/
+__pycache__/
+*.pyc
+train_error.log
+export_error.log
+*.log
+
+# Heavy model artifacts (keep local, do not push)
+runtime/models/intent_onnx/*.onnx
+runtime/models/intent_onnx/*.safetensors
+tools/training/menu_green_intent_model/
+tools/training/dist/
+*.bin
+*.pt
+*.pth
+*.safetensors

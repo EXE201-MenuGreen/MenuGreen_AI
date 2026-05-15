@@ -1,0 +1,57 @@
+﻿HUONG DAN SETUP - RAG_AI_MenuGreen
+Cap nhat: 2026-05-15
+
+1) Yeu cau
+- Python 3.13 (da test) hoac 3.11
+- Windows PowerShell
+
+2) Tao moi truong va cai dependencies
+cd D:\EXE\RAG_AI_MenuGreen
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -U pip setuptools wheel
+pip install -r .\runtime\requirements-runtime.txt
+pip install -r .\requirements-dev.txt
+
+3) Tao file .env tai root project
+SUPABASE_URL=YOUR_SUPABASE_URL
+SUPABASE_KEY=YOUR_SUPABASE_SERVICE_ROLE_KEY
+profiles_table=profiles
+subscriptions_table=subscriptions
+meal_logs_table=meal_logs
+intent_model_dir=models/intent_onnx
+intent_confidence_threshold=0.55
+google_api_key=
+llm_model=gemini-2.5-flash
+
+4) Tao database schema
+- Mo Supabase SQL Editor
+- Chay file: D:\EXE\RAG_AI_MenuGreen\infra\sql\database_setup.sql
+
+5) (Tuy chon) nap du lieu mau
+python .\tools\data_pipeline\ingest_foods.py --csv .\tools\data_pipeline\foods.sample.csv
+python .\tools\data_pipeline\ingest_aliases.py --csv .\tools\data_pipeline\aliases.sample.csv
+python .\tools\data_pipeline\ingest_recipes.py --csv .\tools\data_pipeline\recipes.sample.csv
+
+6) Train va export ONNX
+python -X utf8 .\tools\training\generate_dataset.py
+python -X utf8 .\tools\training\train_intent_classifier.py
+python -X utf8 .\tools\training\export_onnx.py
+
+7) Kiem tra ONNX output
+Get-ChildItem .\runtime\models\intent_onnx
+- Can co: model.int8.onnx (hoac model.onnx), label_config.json, tokenizer files
+
+8) Chay runtime API
+cd .\runtime
+uvicorn app.main:app --reload --port 8000
+
+9) Test nhanh
+curl http://127.0.0.1:8000/health
+curl -X POST http://127.0.0.1:8000/worker/chat -H "Content-Type: application/json" -d "{\"user_id\":\"YOUR_USER_UUID\",\"message\":\"Hom nay toi con an duoc bao nhieu carb nua?\"}"
+
+10) Troubleshoot nhanh
+- Loi sentencepiece: pip install sentencepiece==0.2.1
+- Loi Trainer/accelerate: pip install accelerate==1.2.1
+- Loi ONNX exporter (onnxscript/onnx_ir):
+  pip install onnxscript==0.1.0.dev20241205 onnx-ir==0.1.12

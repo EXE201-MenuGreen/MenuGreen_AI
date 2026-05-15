@@ -1,0 +1,1068 @@
+{
+  "train": [
+    {
+      "text": "Xem công thức tại url này: https://monngonmoingay.com",
+      "label": 4,
+      "label_name": "web_browsing"
+    },
+    {
+      "text": "Đặt vé máy bay đi Đà Nẵng",
+      "label": 7,
+      "label_name": "unknown"
+    },
+    {
+      "text": "Lời khuyên dinh dưỡng tổng quát",
+      "label": 6,
+      "label_name": "general"
+    },
+    {
+      "text": "Chỉ số BMI của tôi?",
+      "label": 1,
+      "label_name": "nutrition_calc"
+    },
+    {
+      "text": "Cách làm chả giò ngon",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Tính lượng calo cần thiết",
+      "label": 1,
+      "label_name": "nutrition_calc"
+    },
+    {
+      "text": "Calo trong bánh mì thịt là bao nhiêu?",
+      "label": 5,
+      "label_name": "calorie_lookup"
+    },
+    {
+      "text": "Tóm tắt link này https://giaoducyte.vn/dinh-duong",
+      "label": 4,
+      "label_name": "web_browsing"
+    },
+    {
+      "text": "Trong kho còn bao nhiêu gạo",
+      "label": 2,
+      "label_name": "inventory_check"
+    },
+    {
+      "text": "Create a 7-day meal plan",
+      "label": 3,
+      "label_name": "meal_plan"
+    },
+    {
+      "text": "Thực phẩm tốt cho não bộ",
+      "label": 6,
+      "label_name": "general"
+    },
+    {
+      "text": "My macros for muscle building",
+      "label": 1,
+      "label_name": "nutrition_calc"
+    },
+    {
+      "text": "Find me a recipe with eggs",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Read this recipe: https://tasty.co/recipe/chicken-soup",
+      "label": 4,
+      "label_name": "web_browsing"
+    },
+    {
+      "text": "Fat intake recommendation for me",
+      "label": 1,
+      "label_name": "nutrition_calc"
+    },
+    {
+      "text": "Ingredients expiring soon",
+      "label": 2,
+      "label_name": "inventory_check"
+    },
+    {
+      "text": "Omega-3 có trong thực phẩm nào?",
+      "label": 6,
+      "label_name": "general"
+    },
+    {
+      "text": "How many calories to lose weight?",
+      "label": 1,
+      "label_name": "nutrition_calc"
+    },
+    {
+      "text": "Cơm gà xối mỡ bao nhiêu calo",
+      "label": 5,
+      "label_name": "calorie_lookup"
+    },
+    {
+      "text": "Calories in fried rice",
+      "label": 5,
+      "label_name": "calorie_lookup"
+    },
+    {
+      "text": "Tính calo cơm tấm",
+      "label": 5,
+      "label_name": "calorie_lookup"
+    },
+    {
+      "text": "Lập kế hoạch ăn uống khoa học",
+      "label": 3,
+      "label_name": "meal_plan"
+    },
+    {
+      "text": "How to cook banh mi?",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Weather forecast tomorrow",
+      "label": 7,
+      "label_name": "unknown"
+    },
+    {
+      "text": "Tính calories mục tiêu để tăng cơ",
+      "label": 1,
+      "label_name": "nutrition_calc"
+    },
+    {
+      "text": "Gợi ý món từ tôm",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Thực đơn theo ngân sách 1 tuần",
+      "label": 3,
+      "label_name": "meal_plan"
+    },
+    {
+      "text": "Ăn chay có đủ dinh dưỡng không?",
+      "label": 6,
+      "label_name": "general"
+    },
+    {
+      "text": "Create a balanced meal schedule",
+      "label": 3,
+      "label_name": "meal_plan"
+    },
+    {
+      "text": "Benefits of eating vegetables",
+      "label": 6,
+      "label_name": "general"
+    },
+    {
+      "text": "Dịch tiếng Nhật sang tiếng Việt",
+      "label": 7,
+      "label_name": "unknown"
+    },
+    {
+      "text": "Gợi ý món tráng miệng",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Thực đơn Keto 1 tuần",
+      "label": 3,
+      "label_name": "meal_plan"
+    },
+    {
+      "text": "Phim hay nên xem",
+      "label": 7,
+      "label_name": "unknown"
+    },
+    {
+      "text": "Thực đơn giảm cân 1 tuần",
+      "label": 3,
+      "label_name": "meal_plan"
+    },
+    {
+      "text": "TDEE của tôi là bao nhiêu?",
+      "label": 1,
+      "label_name": "nutrition_calc"
+    },
+    {
+      "text": "Plan my meals for this week",
+      "label": 3,
+      "label_name": "meal_plan"
+    },
+    {
+      "text": "Bánh flan có bao nhiêu đường",
+      "label": 5,
+      "label_name": "calorie_lookup"
+    },
+    {
+      "text": "100g đậu hũ có bao nhiêu protein",
+      "label": 5,
+      "label_name": "calorie_lookup"
+    },
+    {
+      "text": "How to center a div in CSS?",
+      "label": 7,
+      "label_name": "unknown"
+    },
+    {
+      "text": "Kiểm tra xem còn trứng hay không",
+      "label": 2,
+      "label_name": "inventory_check"
+    },
+    {
+      "text": "https://www.seriouseats.com/recipes",
+      "label": 4,
+      "label_name": "web_browsing"
+    },
+    {
+      "text": "Tips for healthy eating",
+      "label": 6,
+      "label_name": "general"
+    },
+    {
+      "text": "Tính giúp tôi lượng protein theo cân nặng",
+      "label": 1,
+      "label_name": "nutrition_calc"
+    },
+    {
+      "text": "Tôi cần bao nhiêu protein mỗi ngày?",
+      "label": 1,
+      "label_name": "nutrition_calc"
+    },
+    {
+      "text": "Tìm công thức salad thanh mát",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Đường đi đến bệnh viện Bạch Mai",
+      "label": 7,
+      "label_name": "unknown"
+    },
+    {
+      "text": "Calculate my BMR",
+      "label": 1,
+      "label_name": "nutrition_calc"
+    },
+    {
+      "text": "Cách làm gỏi cuốn",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Lượng protein của ức gà luộc",
+      "label": 5,
+      "label_name": "calorie_lookup"
+    },
+    {
+      "text": "Lên menu tuần cho gia đình",
+      "label": 3,
+      "label_name": "meal_plan"
+    },
+    {
+      "text": "https://baomoi.com/dinh-duong-va-suc-khoe",
+      "label": 4,
+      "label_name": "web_browsing"
+    },
+    {
+      "text": "Lập thực đơn dinh dưỡng",
+      "label": 3,
+      "label_name": "meal_plan"
+    },
+    {
+      "text": "Tôi còn bao nhiêu thịt trong tủ?",
+      "label": 2,
+      "label_name": "inventory_check"
+    },
+    {
+      "text": "Món chay nào ngon?",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Mở nhạc giúp tôi",
+      "label": 7,
+      "label_name": "unknown"
+    },
+    {
+      "text": "Tủ lạnh còn gì?",
+      "label": 2,
+      "label_name": "inventory_check"
+    },
+    {
+      "text": "Foods that boost immune system",
+      "label": 6,
+      "label_name": "general"
+    },
+    {
+      "text": "Mua laptop nào tốt",
+      "label": 7,
+      "label_name": "unknown"
+    },
+    {
+      "text": "Phân tích dinh dưỡng cá nhân",
+      "label": 1,
+      "label_name": "nutrition_calc"
+    },
+    {
+      "text": "Suggest a quick dinner recipe",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "https://www.allrecipes.com/recipe/234567",
+      "label": 4,
+      "label_name": "web_browsing"
+    },
+    {
+      "text": "Meal prep ideas for the week",
+      "label": 3,
+      "label_name": "meal_plan"
+    },
+    {
+      "text": "Món ăn giảm cân ngon",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Nguyên liệu nào cần mua thêm?",
+      "label": 2,
+      "label_name": "inventory_check"
+    },
+    {
+      "text": "Cách làm phở bò",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Thức ăn nào gần hết hạn?",
+      "label": 2,
+      "label_name": "inventory_check"
+    },
+    {
+      "text": "https://www.bbcgoodfood.com/recipes/breakfast",
+      "label": 4,
+      "label_name": "web_browsing"
+    },
+    {
+      "text": "Summarize https://healthline.com/nutrition/protein",
+      "label": 4,
+      "label_name": "web_browsing"
+    },
+    {
+      "text": "Generate a healthy meal plan",
+      "label": 3,
+      "label_name": "meal_plan"
+    },
+    {
+      "text": "Macro của tôi nên như thế nào?",
+      "label": 1,
+      "label_name": "nutrition_calc"
+    },
+    {
+      "text": "Thực đơn cho vận động viên",
+      "label": 3,
+      "label_name": "meal_plan"
+    },
+    {
+      "text": "Get recipe from https://recipetineats.com",
+      "label": 4,
+      "label_name": "web_browsing"
+    },
+    {
+      "text": "Kế hoạch ăn 7 ngày giảm cân",
+      "label": 3,
+      "label_name": "meal_plan"
+    },
+    {
+      "text": "Who won the last election?",
+      "label": 7,
+      "label_name": "unknown"
+    },
+    {
+      "text": "Tôi nặng 70kg cao 1m70 cần ăn bao nhiêu?",
+      "label": 1,
+      "label_name": "nutrition_calc"
+    },
+    {
+      "text": "Một ly sinh tố xoài có bao nhiêu calo?",
+      "label": 5,
+      "label_name": "calorie_lookup"
+    },
+    {
+      "text": "Gợi ý món nướng BBQ",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "https://cookpad.com/vn/recipe/123456",
+      "label": 4,
+      "label_name": "web_browsing"
+    },
+    {
+      "text": "Tell me a joke",
+      "label": 7,
+      "label_name": "unknown"
+    },
+    {
+      "text": "Phở bò bao nhiêu calo?",
+      "label": 5,
+      "label_name": "calorie_lookup"
+    },
+    {
+      "text": "Tính mức calo duy trì cho nam 25 tuổi",
+      "label": 1,
+      "label_name": "nutrition_calc"
+    },
+    {
+      "text": "How to learn programming?",
+      "label": 7,
+      "label_name": "unknown"
+    },
+    {
+      "text": "Lợi ích của probiotics",
+      "label": 6,
+      "label_name": "general"
+    },
+    {
+      "text": "Daily nutrition requirements for my profile",
+      "label": 1,
+      "label_name": "nutrition_calc"
+    },
+    {
+      "text": "Tôi muốn nấu bún bò Huế",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Menu Green là gì?",
+      "label": 6,
+      "label_name": "general"
+    },
+    {
+      "text": "Lấy công thức từ https://yummly.com/recipe/sample",
+      "label": 4,
+      "label_name": "web_browsing"
+    },
+    {
+      "text": "Thực phẩm giúp giảm stress",
+      "label": 6,
+      "label_name": "general"
+    },
+    {
+      "text": "Vitamin D có trong đâu?",
+      "label": 6,
+      "label_name": "general"
+    },
+    {
+      "text": "Công thức làm smoothie hoa quả",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Cần mua gì tuần này?",
+      "label": 2,
+      "label_name": "inventory_check"
+    },
+    {
+      "text": "2 + 2 = mấy?",
+      "label": 7,
+      "label_name": "unknown"
+    },
+    {
+      "text": "Rau củ nào sắp hỏng?",
+      "label": 2,
+      "label_name": "inventory_check"
+    },
+    {
+      "text": "Tìm món ăn từ cà chua và trứng",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "News hôm nay có gì mới?",
+      "label": 7,
+      "label_name": "unknown"
+    },
+    {
+      "text": "What can I cook with chicken and vegetables?",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Code Python làm sao?",
+      "label": 7,
+      "label_name": "unknown"
+    },
+    {
+      "text": "Check expiry dates",
+      "label": 2,
+      "label_name": "inventory_check"
+    },
+    {
+      "text": "Tôi muốn sống khỏe hơn",
+      "label": 6,
+      "label_name": "general"
+    },
+    {
+      "text": "Tôi có thịt heo muốn nấu gì?",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Thực phẩm chống oxy hóa tốt nhất",
+      "label": 6,
+      "label_name": "general"
+    },
+    {
+      "text": "Cập nhật kho nguyên liệu",
+      "label": 2,
+      "label_name": "inventory_check"
+    },
+    {
+      "text": "Viết email xin nghỉ phép",
+      "label": 7,
+      "label_name": "unknown"
+    },
+    {
+      "text": "Healthy meal ideas for lunch",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Một quả trứng bao nhiêu calo",
+      "label": 5,
+      "label_name": "calorie_lookup"
+    },
+    {
+      "text": "What groceries do I need?",
+      "label": 2,
+      "label_name": "inventory_check"
+    },
+    {
+      "text": "Tôi cần uống bao nhiêu nước mỗi ngày?",
+      "label": 1,
+      "label_name": "nutrition_calc"
+    },
+    {
+      "text": "Recipe with tofu and mushroom",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Good foods for skin health",
+      "label": 6,
+      "label_name": "general"
+    },
+    {
+      "text": "Tìm nhà trọ giá rẻ",
+      "label": 7,
+      "label_name": "unknown"
+    },
+    {
+      "text": "Giá vàng hôm nay",
+      "label": 7,
+      "label_name": "unknown"
+    },
+    {
+      "text": "Xem giúp tôi đồ ăn nào sắp hư",
+      "label": 2,
+      "label_name": "inventory_check"
+    },
+    {
+      "text": "How many calories are in pho?",
+      "label": 5,
+      "label_name": "calorie_lookup"
+    },
+    {
+      "text": "Ăn uống đúng cách khi tập gym",
+      "label": 6,
+      "label_name": "general"
+    },
+    {
+      "text": "Cách làm bánh mì thịt",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Lợi ích của rau xanh là gì?",
+      "label": 6,
+      "label_name": "general"
+    },
+    {
+      "text": "Cách kiểm soát đường huyết qua ăn uống",
+      "label": 6,
+      "label_name": "general"
+    },
+    {
+      "text": "Tóm tắt nội dung https://vinmec.com/vi/dinh-duong",
+      "label": 4,
+      "label_name": "web_browsing"
+    },
+    {
+      "text": "How much protein should I eat?",
+      "label": 1,
+      "label_name": "nutrition_calc"
+    },
+    {
+      "text": "Check this article https://example.org/nutrition",
+      "label": 4,
+      "label_name": "web_browsing"
+    },
+    {
+      "text": "What is my daily calorie need?",
+      "label": 1,
+      "label_name": "nutrition_calc"
+    },
+    {
+      "text": "Cơm tấm làm như thế nào?",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Có công thức nấu lẩu không?",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Weekly diet plan suggestion",
+      "label": 3,
+      "label_name": "meal_plan"
+    },
+    {
+      "text": "Weekly meal planning for weight loss",
+      "label": 3,
+      "label_name": "meal_plan"
+    },
+    {
+      "text": "Sửa lỗi wifi như thế nào",
+      "label": 7,
+      "label_name": "unknown"
+    },
+    {
+      "text": "Tìm recipe với đậu hũ",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Món này có bao nhiêu chất béo?",
+      "label": 5,
+      "label_name": "calorie_lookup"
+    },
+    {
+      "text": "Nutritional value of spring rolls",
+      "label": 5,
+      "label_name": "calorie_lookup"
+    },
+    {
+      "text": "Bún bò có bao nhiêu protein?",
+      "label": 5,
+      "label_name": "calorie_lookup"
+    },
+    {
+      "text": "Tạo menu giảm mỡ cho nữ văn phòng",
+      "label": 3,
+      "label_name": "meal_plan"
+    },
+    {
+      "text": "Lẩu thái có nhiều calo không",
+      "label": 5,
+      "label_name": "calorie_lookup"
+    },
+    {
+      "text": "Tại sao nên ăn sáng?",
+      "label": 6,
+      "label_name": "general"
+    },
+    {
+      "text": "Có công thức cơm rang không?",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Lượng carb tôi cần nạp mỗi ngày?",
+      "label": 1,
+      "label_name": "nutrition_calc"
+    },
+    {
+      "text": "Calo của trà sữa là bao nhiêu",
+      "label": 5,
+      "label_name": "calorie_lookup"
+    },
+    {
+      "text": "Bạn có thể giúp gì cho tôi?",
+      "label": 6,
+      "label_name": "general"
+    },
+    {
+      "text": "Danh sách nguyên liệu còn lại là gì",
+      "label": 2,
+      "label_name": "inventory_check"
+    },
+    {
+      "text": "Lợi ích của việc uống đủ nước",
+      "label": 6,
+      "label_name": "general"
+    },
+    {
+      "text": "Tính BMR cho tôi",
+      "label": 1,
+      "label_name": "nutrition_calc"
+    },
+    {
+      "text": "Thực phẩm giúp ngủ ngon",
+      "label": 6,
+      "label_name": "general"
+    },
+    {
+      "text": "Pantry status today",
+      "label": 2,
+      "label_name": "inventory_check"
+    },
+    {
+      "text": "Xin chào",
+      "label": 6,
+      "label_name": "general"
+    },
+    {
+      "text": "Update my inventory",
+      "label": 2,
+      "label_name": "inventory_check"
+    },
+    {
+      "text": "What's in my fridge?",
+      "label": 2,
+      "label_name": "inventory_check"
+    },
+    {
+      "text": "Cách ăn uống lành mạnh",
+      "label": 6,
+      "label_name": "general"
+    },
+    {
+      "text": "Tỉ giá đô la",
+      "label": 7,
+      "label_name": "unknown"
+    },
+    {
+      "text": "Kế hoạch eat clean 7 ngày",
+      "label": 3,
+      "label_name": "meal_plan"
+    },
+    {
+      "text": "Tìm công thức lẩu thái",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Tìm món ăn cho trẻ em",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Chơi game gì hay?",
+      "label": 7,
+      "label_name": "unknown"
+    },
+    {
+      "text": "Vegetarian dishes suggestions",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Simple soup recipe",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Cách làm mì xào",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Còn gì trong kho nguyên liệu?",
+      "label": 2,
+      "label_name": "inventory_check"
+    },
+    {
+      "text": "Tạo code C# đăng nhập",
+      "label": 7,
+      "label_name": "unknown"
+    },
+    {
+      "text": "Kiểm tra tủ lạnh của tôi",
+      "label": 2,
+      "label_name": "inventory_check"
+    },
+    {
+      "text": "Ăn gì để tăng cơ?",
+      "label": 6,
+      "label_name": "general"
+    },
+    {
+      "text": "Xem bói",
+      "label": 7,
+      "label_name": "unknown"
+    },
+    {
+      "text": "Nấu súp gà kiểu gì?",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Lập thực đơn 3 ngày từ nguyên liệu sẵn có",
+      "label": 3,
+      "label_name": "meal_plan"
+    },
+    {
+      "text": "Món ăn sáng nhanh và bổ dưỡng",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Check my pantry",
+      "label": 2,
+      "label_name": "inventory_check"
+    },
+    {
+      "text": "Kiểm tra inventory",
+      "label": 2,
+      "label_name": "inventory_check"
+    },
+    {
+      "text": "Món gì ngon cho bữa trưa?",
+      "label": 0,
+      "label_name": "recipe_search"
+    }
+  ],
+  "val": [
+    {
+      "text": "How to maintain a balanced diet?",
+      "label": 6,
+      "label_name": "general"
+    },
+    {
+      "text": "Nấu bò kho ra sao?",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Nguyên liệu nào sắp hết hạn?",
+      "label": 2,
+      "label_name": "inventory_check"
+    },
+    {
+      "text": "Thời tiết hôm nay thế nào?",
+      "label": 7,
+      "label_name": "unknown"
+    },
+    {
+      "text": "How to make pho from scratch?",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Mở link này và đọc giúp tôi https://example.com/recipe",
+      "label": 4,
+      "label_name": "web_browsing"
+    },
+    {
+      "text": "Tôi cần bao nhiêu chất béo mỗi ngày?",
+      "label": 1,
+      "label_name": "nutrition_calc"
+    },
+    {
+      "text": "Chế độ ăn cho người tiểu đường",
+      "label": 6,
+      "label_name": "general"
+    },
+    {
+      "text": "Ăn gì tốt cho tim mạch?",
+      "label": 6,
+      "label_name": "general"
+    },
+    {
+      "text": "Bảng giá chứng khoán",
+      "label": 7,
+      "label_name": "unknown"
+    },
+    {
+      "text": "Meal plan để tăng cơ",
+      "label": 3,
+      "label_name": "meal_plan"
+    },
+    {
+      "text": "Easy Vietnamese recipes",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Crawl nội dung từ link: https://cookpad.com",
+      "label": 4,
+      "label_name": "web_browsing"
+    },
+    {
+      "text": "Tính dinh dưỡng của salad cá ngừ",
+      "label": 5,
+      "label_name": "calorie_lookup"
+    },
+    {
+      "text": "Tôi muốn giảm 5kg cần ăn bao nhiêu calo?",
+      "label": 1,
+      "label_name": "nutrition_calc"
+    },
+    {
+      "text": "Tính nhu cầu dinh dưỡng hàng ngày",
+      "label": 1,
+      "label_name": "nutrition_calc"
+    },
+    {
+      "text": "Món nào nấu nhanh dưới 30 phút?",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Lên menu cho người tiểu đường",
+      "label": 3,
+      "label_name": "meal_plan"
+    },
+    {
+      "text": "Đọc bài này giúp tôi: https://beptruong.edu.vn/mon-an/pho-bo",
+      "label": 4,
+      "label_name": "web_browsing"
+    },
+    {
+      "text": "Thực phẩm nào giàu sắt?",
+      "label": 6,
+      "label_name": "general"
+    },
+    {
+      "text": "Nutrition facts for banh mi",
+      "label": 5,
+      "label_name": "calorie_lookup"
+    },
+    {
+      "text": "Gợi ý món ăn với hải sản",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Gợi ý món ăn với gà",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "1 tô hủ tiếu bao nhiêu kcal?",
+      "label": 5,
+      "label_name": "calorie_lookup"
+    },
+    {
+      "text": "Hạn sử dụng của sữa?",
+      "label": 2,
+      "label_name": "inventory_check"
+    },
+    {
+      "text": "What is the stock price?",
+      "label": 7,
+      "label_name": "unknown"
+    },
+    {
+      "text": "Lịch thi đấu bóng đá hôm nay",
+      "label": 7,
+      "label_name": "unknown"
+    },
+    {
+      "text": "Protein trong bò bít tết",
+      "label": 5,
+      "label_name": "calorie_lookup"
+    },
+    {
+      "text": "Lên thực đơn tuần cho tôi",
+      "label": 3,
+      "label_name": "meal_plan"
+    },
+    {
+      "text": "Tại sao không nên bỏ bữa?",
+      "label": 6,
+      "label_name": "general"
+    },
+    {
+      "text": "Ai thắng World Cup 2022?",
+      "label": 7,
+      "label_name": "unknown"
+    },
+    {
+      "text": "Meal prep cho 1 tuần",
+      "label": 3,
+      "label_name": "meal_plan"
+    },
+    {
+      "text": "Nguyên liệu nào còn nhiều?",
+      "label": 2,
+      "label_name": "inventory_check"
+    },
+    {
+      "text": "Tạo kế hoạch bữa ăn hàng tuần",
+      "label": 3,
+      "label_name": "meal_plan"
+    },
+    {
+      "text": "Báo cáo tồn kho",
+      "label": 2,
+      "label_name": "inventory_check"
+    },
+    {
+      "text": "Protein requirement for athletes",
+      "label": 1,
+      "label_name": "nutrition_calc"
+    },
+    {
+      "text": "Cách bổ sung canxi tự nhiên",
+      "label": 6,
+      "label_name": "general"
+    },
+    {
+      "text": "Số điện thoại của ai đó",
+      "label": 7,
+      "label_name": "unknown"
+    },
+    {
+      "text": "Cách làm canh chua cá",
+      "label": 0,
+      "label_name": "recipe_search"
+    },
+    {
+      "text": "Fridge check for expiring items",
+      "label": 2,
+      "label_name": "inventory_check"
+    },
+    {
+      "text": "Calculate TDEE for weight loss",
+      "label": 1,
+      "label_name": "nutrition_calc"
+    },
+    {
+      "text": "Món ăn từ rau củ",
+      "label": 0,
+      "label_name": "recipe_search"
+    }
+  ],
+  "label_map": {
+    "recipe_search": 0,
+    "nutrition_calc": 1,
+    "inventory_check": 2,
+    "meal_plan": 3,
+    "web_browsing": 4,
+    "calorie_lookup": 5,
+    "general": 6,
+    "unknown": 7
+  },
+  "label_order": [
+    "recipe_search",
+    "nutrition_calc",
+    "inventory_check",
+    "meal_plan",
+    "web_browsing",
+    "calorie_lookup",
+    "general",
+    "unknown"
+  ],
+  "num_labels": 8,
+  "total": 208
+}

@@ -1,0 +1,12 @@
+﻿# Dev and training dependencies only
+-r runtime/requirements-runtime.txt
+optimum[onnxruntime]==1.23.3
+sentencepiece==0.2.1
+accelerate==1.2.1
+onnxscript==0.1.0.dev20241205
+onnx-ir==0.1.12
+scikit-learn==1.5.2
+pandas==2.2.3
+pytest==8.3.4
+pytest-asyncio==0.24.0
+ruff==0.8.4
