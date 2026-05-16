@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from app.schemas.chat import (
     ChatRequest,
@@ -37,7 +37,13 @@ def admin_crawler_normalize(request: CrawlerNormalizeRequest) -> CrawlerNormaliz
 
 @router.post("/admin/crawler/ingest", response_model=CrawlerIngestResponse)
 def admin_crawler_ingest(request: CrawlerIngestRequest) -> CrawlerIngestResponse:
-    counters = ingest_normalized(request.normalized)
+    try:
+        counters = ingest_normalized(request.normalized)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Crawler ingest failed: {exc}") from exc
+
     return CrawlerIngestResponse(
         recipes_inserted=counters.recipes_inserted,
         recipes_updated=counters.recipes_updated,

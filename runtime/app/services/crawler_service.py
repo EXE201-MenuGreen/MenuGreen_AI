@@ -102,18 +102,39 @@ def _get_or_create_ingredient_id(client, name: str, counters: Counters) -> str |
     if not n:
         return None
 
-    rows = client.table("ingredients").select("id,name").ilike("name", n).limit(1).execute().data or []
+    rows = (
+        client.table("ingredients")
+        .select("id,name,calories_per_100g,protein_per_100g,carbs_per_100g,fat_per_100g,fiber_per_100g")
+        .ilike("name", n)
+        .limit(1)
+        .execute()
+        .data
+        or []
+    )
     if rows:
+        found = rows[0]
+        # Enrich existing ingredient if it still has empty nutrition.
+        if float(found.get("calories_per_100g") or 0) <= 0:
+            nut = _lookup_food_nutrition(client, n)
+            if nut is not None:
+                client.table("ingredients").update(nut).eq("id", found["id"]).execute()
         return rows[0]["id"]
 
+    nut = _lookup_food_nutrition(client, n) or {
+        "calories_per_100g": 0,
+        "protein_per_100g": 0,
+        "carbs_per_100g": 0,
+        "fat_per_100g": 0,
+        "fiber_per_100g": 0,
+    }
     ins = client.table("ingredients").insert(
         {
             "name": n,
-            "calories_per_100g": 0,
-            "protein_per_100g": 0,
-            "carbs_per_100g": 0,
-            "fat_per_100g": 0,
-            "fiber_per_100g": 0,
+            "calories_per_100g": nut["calories_per_100g"],
+            "protein_per_100g": nut["protein_per_100g"],
+            "carbs_per_100g": nut["carbs_per_100g"],
+            "fat_per_100g": nut["fat_per_100g"],
+            "fiber_per_100g": nut["fiber_per_100g"],
             "category": "unknown",
         }
     ).execute().data or []
@@ -123,6 +144,41 @@ def _get_or_create_ingredient_id(client, name: str, counters: Counters) -> str |
 
     counters.ingredients_inserted += 1
     return ins[0]["id"]
+
+
+def _to_float(value: Any) -> float:
+    try:
+        return float(value or 0)
+    except Exception:
+        return 0.0
+
+
+def _lookup_food_nutrition(client, ingredient_name: str) -> dict[str, float] | None:
+    q = (ingredient_name or "").strip()
+    if not q:
+        return None
+    try:
+        rows = (
+            client.table("foods")
+            .select("*")
+            .ilike("name", f"%{q}%")
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+    except Exception:
+        return None
+    if not rows:
+        return None
+    r = rows[0]
+    return {
+        "calories_per_100g": _to_float(r.get("calories_kcal_per_100g", r.get("calories_kcal"))),
+        "protein_per_100g": _to_float(r.get("protein_g_per_100g", r.get("protein_g"))),
+        "carbs_per_100g": _to_float(r.get("carbs_g_per_100g", r.get("carbs_g"))),
+        "fat_per_100g": _to_float(r.get("fat_g_per_100g", r.get("fat_g"))),
+        "fiber_per_100g": _to_float(r.get("fiber_g_per_100g", r.get("fiber_g"))),
+    }
 
 
 def _upsert_recipe(client, row: dict, counters: Counters) -> str | None:
@@ -176,6 +232,7 @@ def ingest_normalized(normalized: dict) -> Counters:
         if local_id:
             local_map[local_id] = rid
 
+    touched_recipe_ids: set[str] = set()
     for ing in parsed_ingredients:
         local_id = str(ing.get("recipe_local_id") or "")
         rid = local_map.get(local_id)
@@ -215,5 +272,73 @@ def ingest_normalized(normalized: dict) -> Counters:
             }
         ).execute()
         counters.recipe_links_inserted += 1
+        touched_recipe_ids.add(rid)
+
+    for rid in touched_recipe_ids:
+        _recompute_recipe_nutrition(client, rid)
 
     return counters
+
+
+def _recompute_recipe_nutrition(client, recipe_id: str) -> None:
+    try:
+        recipe_rows = (
+            client.table("recipes").select("id,servings").eq("id", recipe_id).limit(1).execute().data or []
+        )
+        if not recipe_rows:
+            return
+        servings = max(_to_float(recipe_rows[0].get("servings")), 1.0)
+
+        links = (
+            client.table("recipe_ingredients")
+            .select("ingredient_id,amount")
+            .eq("recipe_id", recipe_id)
+            .execute()
+            .data
+            or []
+        )
+        if not links:
+            return
+
+        ing_ids = [x.get("ingredient_id") for x in links if x.get("ingredient_id")]
+        if not ing_ids:
+            return
+        ingredients = (
+            client.table("ingredients")
+            .select("id,calories_per_100g,protein_per_100g,carbs_per_100g,fat_per_100g")
+            .in_("id", ing_ids)
+            .execute()
+            .data
+            or []
+        )
+        ing_map = {x["id"]: x for x in ingredients}
+
+        total_kcal = 0.0
+        total_p = 0.0
+        total_c = 0.0
+        total_f = 0.0
+        for link in links:
+            iid = link.get("ingredient_id")
+            amount_g = _to_float(link.get("amount"))
+            if not iid or amount_g <= 0:
+                continue
+            ing = ing_map.get(iid)
+            if not ing:
+                continue
+            factor = amount_g / 100.0
+            total_kcal += factor * _to_float(ing.get("calories_per_100g"))
+            total_p += factor * _to_float(ing.get("protein_per_100g"))
+            total_c += factor * _to_float(ing.get("carbs_per_100g"))
+            total_f += factor * _to_float(ing.get("fat_per_100g"))
+
+        client.table("recipes").update(
+            {
+                "calories_per_serving": round(total_kcal / servings, 1),
+                "protein_per_serving": round(total_p / servings, 1),
+                "carbs_per_serving": round(total_c / servings, 1),
+                "fat_per_serving": round(total_f / servings, 1),
+            }
+        ).eq("id", recipe_id).execute()
+    except Exception:
+        # Keep ingest resilient; do not fail whole batch because one nutrition update failed.
+        return
