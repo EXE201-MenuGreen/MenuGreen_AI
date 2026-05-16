@@ -1,5 +1,5 @@
 ﻿from pydantic import BaseModel, Field
-from typing import Literal
+from typing import Any, Literal
 
 SubscriptionTier = Literal["free", "saving", "energy", "performance"]
 
@@ -25,3 +25,25 @@ class ChatResponse(BaseModel):
     thread_id: str | None = None
     intent_confidence: float | None = None
     subscription_tier: SubscriptionTier = "free"
+
+
+class CrawlerNormalizeRequest(BaseModel):
+    data: Any
+
+
+class CrawlerNormalizeResponse(BaseModel):
+    total_recipes: int
+    total_ingredients: int
+    normalized: dict
+
+
+class CrawlerIngestRequest(BaseModel):
+    normalized: dict
+
+
+class CrawlerIngestResponse(BaseModel):
+    recipes_inserted: int
+    recipes_updated: int
+    ingredients_inserted: int
+    recipe_links_inserted: int
+    skipped: int
