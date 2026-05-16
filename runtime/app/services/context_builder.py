@@ -48,8 +48,25 @@ def summarize_today_macros(logs: list[dict]) -> dict:
 
 def build_context_snapshot(profile: dict | None, logs_7d: list[dict]) -> dict:
     today_totals = summarize_today_macros(logs_7d)
+    profile_data = profile or {}
+    targets = {
+        "calories_kcal": _to_float(
+            profile_data.get("target_calories", profile_data.get("target_calories_kcal"))
+        ),
+        "protein_g": _to_float(profile_data.get("target_protein_g")),
+        "carbs_g": _to_float(profile_data.get("target_carbs_g")),
+        "fat_g": _to_float(profile_data.get("target_fat_g")),
+    }
+    remaining = {
+        "calories_kcal": round(max(targets["calories_kcal"] - today_totals["calories_kcal"], 0.0), 1),
+        "protein_g": round(max(targets["protein_g"] - today_totals["protein_g"], 0.0), 1),
+        "carbs_g": round(max(targets["carbs_g"] - today_totals["carbs_g"], 0.0), 1),
+        "fat_g": round(max(targets["fat_g"] - today_totals["fat_g"], 0.0), 1),
+    }
     return {
-        "profile": profile or {},
+        "profile": profile_data,
         "meal_logs_7d_count": len(logs_7d),
         "today_totals": today_totals,
+        "targets": targets,
+        "remaining_totals": remaining,
     }

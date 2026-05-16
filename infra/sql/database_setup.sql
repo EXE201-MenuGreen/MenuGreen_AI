@@ -45,6 +45,12 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS external_user_map (
+    external_user_id TEXT PRIMARY KEY,
+    user_id UUID NOT NULL UNIQUE REFERENCES profiles(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ============================================================================
 -- CORE: LOGGING / COACH
 -- ============================================================================
@@ -291,6 +297,7 @@ CREATE INDEX IF NOT EXISTS idx_meal_plans_user_plan_date ON meal_plans(user_id, 
 
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE subscriptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE external_user_map ENABLE ROW LEVEL SECURITY;
 ALTER TABLE meal_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ai_chat_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ai_recommendations ENABLE ROW LEVEL SECURITY;
@@ -315,6 +322,13 @@ DROP POLICY IF EXISTS subscriptions_insert_own ON subscriptions;
 CREATE POLICY subscriptions_insert_own ON subscriptions FOR INSERT WITH CHECK (auth.uid() = user_id);
 DROP POLICY IF EXISTS subscriptions_update_own ON subscriptions;
 CREATE POLICY subscriptions_update_own ON subscriptions FOR UPDATE USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS external_user_map_select_own ON external_user_map;
+CREATE POLICY external_user_map_select_own ON external_user_map FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS external_user_map_insert_own ON external_user_map;
+CREATE POLICY external_user_map_insert_own ON external_user_map FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS external_user_map_update_own ON external_user_map;
+CREATE POLICY external_user_map_update_own ON external_user_map FOR UPDATE USING (auth.uid() = user_id);
 
 DROP POLICY IF EXISTS meal_logs_select_own ON meal_logs;
 CREATE POLICY meal_logs_select_own ON meal_logs FOR SELECT USING (auth.uid() = user_id);
