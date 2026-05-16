@@ -1,0 +1,177 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MenuGreen Runtime - Temp FE</title>
+  <style>
+    :root { --bg:#0b1220; --card:#111a2e; --ink:#eaf0ff; --muted:#9fb0d1; --accent:#3ddc97; --warn:#ffb347; }
+    *{box-sizing:border-box} body{margin:0;font-family:Segoe UI,Arial,sans-serif;background:radial-gradient(circle at 10% 10%, #1a2744, var(--bg));color:var(--ink)}
+    .wrap{max-width:1100px;margin:24px auto;padding:0 16px} .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    .card{background:var(--card);border:1px solid #22365f;border-radius:14px;padding:14px} h1{margin:0 0 12px;font-size:24px}
+    h2{margin:0 0 10px;font-size:16px;color:var(--muted)} label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px}
+    input,textarea,button{width:100%;padding:10px;border-radius:10px;border:1px solid #314a7a;background:#0d1730;color:var(--ink)}
+    textarea{min-height:100px;resize:vertical} button{background:linear-gradient(90deg,#1f7cff,#3ddc97);border:none;font-weight:700;cursor:pointer}
+    button.secondary{background:#253b66} .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    pre{background:#091126;border:1px solid #21345b;border-radius:10px;padding:10px;white-space:pre-wrap;word-break:break-word;max-height:420px;overflow:auto}
+    .ok{color:var(--accent)} .warn{color:var(--warn)} .chat{display:flex;flex-direction:column;gap:8px;max-height:320px;overflow:auto;padding-right:4px}
+    .bubble{padding:8px 10px;border-radius:10px;border:1px solid #2e446f} .u{background:#11284a} .a{background:#183024}
+    .stack{display:flex;gap:8px}
+    @media (max-width:900px){.grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>MenuGreen Runtime - Temporary FE</h1>
+    <div class="grid">
+      <section class="card">
+        <h2>System Check</h2>
+        <button class="secondary" id="btnHealth">Check /health</button>
+        <p id="healthResult" class="warn">Not checked yet</p>
+        <h2>Quick Endpoint Test</h2>
+        <button class="secondary" id="btnDocs">Open Swagger Docs</button>
+        <button class="secondary" id="btnOpenApi" style="margin-top:8px">Open OpenAPI JSON</button>
+      </section>
+
+      <section class="card">
+        <h2>AI Coach Chat (/worker/chat)</h2>
+        <div class="row">
+          <div>
+            <label>User ID (UUID or external)</label>
+            <input id="userId" placeholder="user_abc_123" />
+          </div>
+          <div>
+            <label>Thread ID (optional)</label>
+            <input id="threadId" placeholder="thread-001" />
+          </div>
+        </div>
+        <label>Message</label>
+        <textarea id="message">Toi con bao nhieu carb hom nay?</textarea>
+        <button id="sendBtn">Send</button>
+      </section>
+    </div>
+
+    <div class="grid" style="margin-top:16px">
+      <section class="card">
+        <h2>Conversation</h2>
+        <div id="chatBox" class="chat"></div>
+      </section>
+      <section class="card">
+        <h2>Raw JSON Response</h2>
+        <pre id="raw">{}</pre>
+      </section>
+    </div>
+
+    <div class="grid" style="margin-top:16px">
+      <section class="card" style="grid-column:1/-1;">
+        <h2>Admin Crawler Demo</h2>
+        <label>Raw crawler JSON (array or {"recipes": [...]})</label>
+        <textarea id="crawlerRaw" style="min-height:220px;">[
+  {
+    "name":"Pho bo",
+    "description":"Mon nuoc Viet",
+    "ingredients":["500 g xuong bo","200 g banh pho","100 g thit bo"],
+    "steps":["Ham xuong","Chanh banh pho","Trinh bay"],
+    "tags":["vietnamese","noodle"]
+  }
+]</textarea>
+        <div class="stack" style="margin-top:10px;">
+          <button id="btnNormalize">Normalize Crawler Data</button>
+          <button class="secondary" id="btnIngest">Ingest Normalized to DB</button>
+        </div>
+        <p id="crawlerStatus" class="warn">Waiting action...</p>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const byId = (id) => document.getElementById(id);
+    const healthResult = byId('healthResult');
+    const raw = byId('raw');
+    const chatBox = byId('chatBox');
+    const crawlerStatus = byId('crawlerStatus');
+    let lastNormalized = null;
+
+    function addBubble(role, text) {
+      const div = document.createElement('div');
+      div.className = `bubble ${role === 'user' ? 'u' : 'a'}`;
+      div.textContent = `${role === 'user' ? 'User' : 'AI'}: ${text}`;
+      chatBox.appendChild(div);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    byId('btnHealth').onclick = async () => {
+      try {
+        const res = await fetch('/health');
+        const data = await res.json();
+        healthResult.textContent = `OK: ${JSON.stringify(data)}`;
+        healthResult.className = 'ok';
+      } catch (e) {
+        healthResult.textContent = `ERROR: ${e.message}`;
+        healthResult.className = 'warn';
+      }
+    };
+
+    byId('btnDocs').onclick = () => window.open('/docs', '_blank');
+    byId('btnOpenApi').onclick = () => window.open('/openapi.json', '_blank');
+
+    byId('sendBtn').onclick = async () => {
+      const payload = {
+        user_id: byId('userId').value || null,
+        thread_id: byId('threadId').value || null,
+        message: byId('message').value,
+      };
+      addBubble('user', payload.message);
+      try {
+        const res = await fetch('/worker/chat', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        raw.textContent = JSON.stringify(data, null, 2);
+        addBubble('assistant', data.response || '(no response)');
+      } catch (e) {
+        const err = { error: e.message };
+        raw.textContent = JSON.stringify(err, null, 2);
+        addBubble('assistant', `Request failed: ${e.message}`);
+      }
+    };
+
+    byId('btnNormalize').onclick = async () => {
+      try {
+        const parsed = JSON.parse(byId('crawlerRaw').value);
+        const res = await fetch('/admin/crawler/normalize', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data: parsed })
+        });
+        const data = await res.json();
+        raw.textContent = JSON.stringify(data, null, 2);
+        if (!res.ok) throw new Error(data.detail || 'Normalize failed');
+        lastNormalized = data.normalized;
+        crawlerStatus.textContent = `Normalized OK: recipes=${data.total_recipes}, ingredients=${data.total_ingredients}`;
+        crawlerStatus.className = 'ok';
+      } catch (e) {
+        crawlerStatus.textContent = `Normalize error: ${e.message}`;
+        crawlerStatus.className = 'warn';
+      }
+    };
+
+    byId('btnIngest').onclick = async () => {
+      try {
+        if (!lastNormalized) throw new Error('No normalized data. Run Normalize first.');
+        const res = await fetch('/admin/crawler/ingest', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ normalized: lastNormalized })
+        });
+        const data = await res.json();
+        raw.textContent = JSON.stringify(data, null, 2);
+        if (!res.ok) throw new Error(data.detail || 'Ingest failed');
+        crawlerStatus.textContent = `Ingest OK: recipes+${data.recipes_inserted}, updated=${data.recipes_updated}, links+${data.recipe_links_inserted}`;
+        crawlerStatus.className = 'ok';
+      } catch (e) {
+        crawlerStatus.textContent = `Ingest error: ${e.message}`;
+        crawlerStatus.className = 'warn';
+      }
+    };
+  </script>
+</body>
+</html>
