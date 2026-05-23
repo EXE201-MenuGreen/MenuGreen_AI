@@ -1,179 +1,403 @@
 ﻿<!doctype html>
-<html lang="en">
+<html lang="vi">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MenuGreen Runtime - Temp FE</title>
+  <title>MenuGreen AI Capability Console</title>
   <style>
-    :root { --bg:#0b1220; --card:#111a2e; --ink:#eaf0ff; --muted:#9fb0d1; --accent:#3ddc97; --warn:#ffb347; }
-    *{box-sizing:border-box} body{margin:0;font-family:Segoe UI,Arial,sans-serif;background:radial-gradient(circle at 10% 10%, #1a2744, var(--bg));color:var(--ink)}
-    .wrap{max-width:1100px;margin:24px auto;padding:0 16px} .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-    .card{background:var(--card);border:1px solid #22365f;border-radius:14px;padding:14px} h1{margin:0 0 12px;font-size:24px}
-    h2{margin:0 0 10px;font-size:16px;color:var(--muted)} label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px}
-    input,textarea,button{width:100%;padding:10px;border-radius:10px;border:1px solid #314a7a;background:#0d1730;color:var(--ink)}
-    textarea{min-height:100px;resize:vertical} button{background:linear-gradient(90deg,#1f7cff,#3ddc97);border:none;font-weight:700;cursor:pointer}
-    button.secondary{background:#253b66} .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-    pre{background:#091126;border:1px solid #21345b;border-radius:10px;padding:10px;white-space:pre-wrap;word-break:break-word;max-height:420px;overflow:auto}
-    .ok{color:var(--accent)} .warn{color:var(--warn)} .chat{display:flex;flex-direction:column;gap:8px;max-height:320px;overflow:auto;padding-right:4px}
-    .bubble{padding:8px 10px;border-radius:10px;border:1px solid #2e446f} .u{background:#11284a} .a{background:#183024}
-    .stack{display:flex;gap:8px}
-    @media (max-width:900px){.grid{grid-template-columns:1fr}}
+    :root {
+      --bg: #f4f7fb;
+      --card: #ffffff;
+      --line: #d8e1ef;
+      --ink: #13233a;
+      --muted: #5e718f;
+      --ok: #1f9d62;
+      --warn: #b54708;
+      --accent: #0f6fff;
+      --accent2: #0aa88f;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 0% 0%, #dde9ff 0%, transparent 35%),
+        radial-gradient(circle at 100% 100%, #dbf5ee 0%, transparent 35%),
+        var(--bg);
+    }
+    .wrap { max-width: 1380px; margin: 18px auto; padding: 0 14px 24px; }
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    .sub { margin: 0 0 14px; color: var(--muted); }
+    .topbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+    .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 12px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px;
+      box-shadow: 0 8px 20px rgba(26, 57, 111, 0.06);
+    }
+    .col-4 { grid-column: span 4; }
+    .col-6 { grid-column: span 6; }
+    .col-8 { grid-column: span 8; }
+    .col-12 { grid-column: span 12; }
+    h2 { margin: 0 0 8px; font-size: 15px; color: var(--ink); }
+    p.small { margin: 0 0 8px; color: var(--muted); font-size: 12px; }
+    label { display: block; font-size: 12px; color: var(--muted); margin: 6px 0 4px; }
+    input, textarea, select, button {
+      width: 100%;
+      border: 1px solid #c8d5ea;
+      border-radius: 10px;
+      padding: 9px 10px;
+      font-size: 13px;
+      background: #fff;
+      color: var(--ink);
+    }
+    textarea { min-height: 90px; resize: vertical; }
+    .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+    .btn {
+      border: 0;
+      color: white;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      cursor: pointer;
+      font-weight: 700;
+    }
+    .btn.ghost {
+      background: #eaf1fd;
+      color: #174aa8;
+      border: 1px solid #c8d9fb;
+    }
+    .status { font-size: 12px; margin-top: 6px; color: var(--warn); }
+    .status.ok { color: var(--ok); }
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      border-radius: 10px;
+      border: 1px solid #dde5f4;
+      background: #f8fbff;
+      padding: 10px;
+      max-height: 380px;
+      overflow: auto;
+      font-size: 12px;
+    }
+    .chat {
+      max-height: 280px;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .bubble {
+      border-radius: 10px;
+      padding: 8px;
+      border: 1px solid #d7e2f3;
+      font-size: 13px;
+    }
+    .u { background: #eef4ff; }
+    .a { background: #ebfbf4; }
+    @media (max-width: 1024px) {
+      .col-4, .col-6, .col-8 { grid-column: span 12; }
+    }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>MenuGreen Runtime - Temporary FE</h1>
-    <div class="grid">
-      <section class="card">
-        <h2>System Check</h2>
-        <button class="secondary" id="btnHealth">Check /health</button>
-        <p id="healthResult" class="warn">Not checked yet</p>
-        <h2>Quick Endpoint Test</h2>
-        <button class="secondary" id="btnDocs">Open Swagger Docs</button>
-        <button class="secondary" id="btnOpenApi" style="margin-top:8px">Open OpenAPI JSON</button>
-      </section>
+<div class="wrap">
+  <h1>MenuGreen AI Capability Console</h1>
+  <p class="sub">FE demo cho BE tích hợp: hiển thị đầy đủ endpoint AI + mẫu request/response.</p>
 
-      <section class="card">
-        <h2>AI Coach Chat (/worker/chat)</h2>
-        <div class="row">
-          <div>
-            <label>User ID (UUID or external)</label>
-            <input id="userId" placeholder="user_abc_123" />
-          </div>
-          <div>
-            <label>Thread ID (optional)</label>
-            <input id="threadId" placeholder="thread-001" />
-          </div>
-        </div>
-        <label>Message</label>
-        <textarea id="message">Toi con bao nhieu carb hom nay?</textarea>
-        <button id="sendBtn">Send</button>
-      </section>
-    </div>
-
-    <div class="grid" style="margin-top:16px">
-      <section class="card">
-        <h2>Conversation</h2>
-        <div id="chatBox" class="chat"></div>
-      </section>
-      <section class="card">
-        <h2>Raw JSON Response</h2>
-        <pre id="raw">{}</pre>
-      </section>
-    </div>
-
-    <div class="grid" style="margin-top:16px">
-      <section class="card" style="grid-column:1/-1;">
-        <h2>Admin Crawler Demo</h2>
-        <label>Raw crawler JSON (array or {"recipes": [...]})</label>
-        <textarea id="crawlerRaw" style="min-height:220px;">[
-  {
-    "name":"Pho bo",
-    "description":"Mon nuoc Viet",
-    "ingredients":["500 g xuong bo","200 g banh pho","100 g thit bo"],
-    "steps":["Ham xuong","Chanh banh pho","Trinh bay"],
-    "tags":["vietnamese","noodle"]
-  }
-]</textarea>
-        <div class="stack" style="margin-top:10px;">
-          <button id="btnNormalize">Normalize Crawler Data</button>
-          <button class="secondary" id="btnIngest">Ingest Normalized to DB</button>
-        </div>
-        <p id="crawlerStatus" class="warn">Waiting action...</p>
-      </section>
-    </div>
+  <div class="topbar">
+    <button class="btn ghost" id="btnHealth">Check /health</button>
+    <button class="btn ghost" id="btnDocs">Open /docs</button>
+    <button class="btn ghost" id="btnOpenApi">Open /openapi.json</button>
   </div>
 
-  <script>
-    const byId = (id) => document.getElementById(id);
-    const healthResult = byId('healthResult');
-    const raw = byId('raw');
-    const chatBox = byId('chatBox');
-    const crawlerStatus = byId('crawlerStatus');
-    let lastNormalized = null;
+  <div class="grid">
+    <section class="card col-8">
+      <h2>1) AI Coach Chat - POST /worker/chat</h2>
+      <div class="row2">
+        <div>
+          <label>User ID</label>
+          <input id="userId" value="user_demo_be" />
+        </div>
+        <div>
+          <label>Thread ID</label>
+          <input id="threadId" value="be-demo-thread-1" />
+        </div>
+      </div>
+      <label>Message</label>
+      <textarea id="message">Hôm nay tôi còn bao nhiêu kcal và gợi ý bữa trưa nhanh dưới 60k?</textarea>
+      <button class="btn" id="sendBtn">Gọi Chat</button>
+      <div id="chatStatus" class="status">Chưa gửi</div>
+      <div class="chat" id="chatBox"></div>
+    </section>
 
-    function addBubble(role, text) {
-      const div = document.createElement('div');
-      div.className = `bubble ${role === 'user' ? 'u' : 'a'}`;
-      div.textContent = `${role === 'user' ? 'User' : 'AI'}: ${text}`;
-      chatBox.appendChild(div);
-      chatBox.scrollTop = chatBox.scrollHeight;
+    <section class="card col-4">
+      <h2>2) Safety Notes</h2>
+      <p class="small">Response chat hiện đi qua safety layer trước khi trả về.</p>
+      <ul class="small">
+        <li>Chặn keyword y tế nguy hiểm</li>
+        <li>Giới hạn độ dài output</li>
+        <li>Cảnh báo ăn kiêng cực đoan</li>
+      </ul>
+      <div id="healthResult" class="status">Chưa check health</div>
+    </section>
+
+    <section class="card col-6">
+      <h2>3) Feedback Capture - POST /api/ai/feedback</h2>
+      <div class="row2">
+        <div>
+          <label>Feedback Type</label>
+          <select id="feedbackType">
+            <option value="thumbs_up">thumbs_up</option>
+            <option value="thumbs_down">thumbs_down</option>
+            <option value="correction">correction</option>
+            <option value="rating">rating</option>
+          </select>
+        </div>
+        <div>
+          <label>Rating (khi type=rating)</label>
+          <input id="feedbackRating" type="number" min="1" max="5" value="5" />
+        </div>
+      </div>
+      <label>User note (input_text)</label>
+      <textarea id="feedbackNote">Gợi ý thêm món ít dầu cho bữa tối.</textarea>
+      <label>Corrected response</label>
+      <textarea id="feedbackCorrected">Bạn có thể ăn cá hấp + rau luộc + cơm gạo lứt, tổng khoảng 550 kcal.</textarea>
+      <button class="btn" id="btnCreateFeedback">Tạo Feedback</button>
+      <div id="feedbackStatus" class="status">Chưa tạo feedback</div>
+    </section>
+
+    <section class="card col-6">
+      <h2>4) Nightly Curation - POST /api/ai/curation/nightly</h2>
+      <label>Limit events</label>
+      <input id="curationLimit" type="number" value="200" min="1" max="2000" />
+      <button class="btn" id="btnCuration">Run Curation</button>
+      <div id="curationStatus" class="status">Chưa chạy</div>
+
+      <h2 style="margin-top:12px">5) Training Samples - GET/PATCH</h2>
+      <div class="row2">
+        <button class="btn ghost" id="btnListSamples">List Samples</button>
+        <button class="btn ghost" id="btnApproveFirst">Approve First Pending</button>
+      </div>
+      <div id="sampleStatus" class="status">Chưa thao tác</div>
+    </section>
+
+    <section class="card col-6">
+      <h2>6) Meal Plan 7 Days - POST /api/ai/meal-plans/7d</h2>
+      <div class="row3">
+        <div>
+          <label>Budget/day (VND)</label>
+          <input id="planBudget" type="number" value="120000" />
+        </div>
+        <div>
+          <label>Max cook time (min)</label>
+          <input id="planTime" type="number" value="30" />
+        </div>
+        <div>
+          <label>Target kcal/day</label>
+          <input id="planKcal" type="number" value="2000" />
+        </div>
+      </div>
+      <button class="btn" id="btnMealPlan">Generate 7-Day Plan</button>
+      <div id="planStatus" class="status">Chưa tạo meal plan</div>
+    </section>
+
+    <section class="card col-6">
+      <h2>7) Admin Crawler Normalize/Ingest</h2>
+      <textarea id="crawlerRaw">[{"name":"Phở bò","description":"Món nước","ingredients":["300 g xương bò","120 g bánh phở"],"steps":["Ninh xương","Trụng bánh phở"]}]</textarea>
+      <div class="row2">
+        <button class="btn ghost" id="btnNormalize">Normalize</button>
+        <button class="btn" id="btnIngest">Ingest</button>
+      </div>
+      <div id="crawlerStatus" class="status">Chưa chạy crawler</div>
+    </section>
+
+    <section class="card col-12">
+      <h2>Raw API Response (cho BE copy contract)</h2>
+      <pre id="raw">{}</pre>
+    </section>
+  </div>
+</div>
+
+<script>
+  const byId = (id) => document.getElementById(id);
+  const raw = byId('raw');
+  const chatBox = byId('chatBox');
+  let lastNormalized = null;
+  let lastFeedbackId = null;
+  let cachedSamples = [];
+
+  function setStatus(id, message, ok = false) {
+    const el = byId(id);
+    el.textContent = message;
+    el.className = ok ? 'status ok' : 'status';
+  }
+
+  function addBubble(role, text) {
+    const item = document.createElement('div');
+    item.className = `bubble ${role === 'user' ? 'u' : 'a'}`;
+    item.textContent = `${role === 'user' ? 'User' : 'AI'}: ${text}`;
+    chatBox.appendChild(item);
+    chatBox.scrollTop = chatBox.scrollHeight;
+  }
+
+  async function callApi(url, options = {}) {
+    const res = await fetch(url, options);
+    const text = await res.text();
+    let data = {};
+    try { data = JSON.parse(text); } catch { data = { raw: text }; }
+    raw.textContent = JSON.stringify({ url, status: res.status, data }, null, 2);
+    if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+    return data;
+  }
+
+  byId('btnHealth').onclick = async () => {
+    try {
+      const data = await callApi('/health');
+      setStatus('healthResult', `Health OK: ${JSON.stringify(data)}`, true);
+    } catch (e) {
+      setStatus('healthResult', `Health lỗi: ${e.message}`);
     }
+  };
 
-    byId('btnHealth').onclick = async () => {
-      try {
-        const res = await fetch('/health');
-        const data = await res.json();
-        healthResult.textContent = `OK: ${JSON.stringify(data)}`;
-        healthResult.className = 'ok';
-      } catch (e) {
-        healthResult.textContent = `ERROR: ${e.message}`;
-        healthResult.className = 'warn';
-      }
+  byId('btnDocs').onclick = () => window.open('/docs', '_blank');
+  byId('btnOpenApi').onclick = () => window.open('/openapi.json', '_blank');
+
+  byId('sendBtn').onclick = async () => {
+    const payload = {
+      user_id: byId('userId').value || null,
+      thread_id: byId('threadId').value || null,
+      message: byId('message').value
     };
+    addBubble('user', payload.message);
+    try {
+      const data = await callApi('/worker/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      addBubble('assistant', data.response || '(no response)');
+      setStatus('chatStatus', `Chat OK | intent=${data.intent} | source=${data.source}`, true);
+    } catch (e) {
+      setStatus('chatStatus', `Chat lỗi: ${e.message}`);
+    }
+  };
 
-    byId('btnDocs').onclick = () => window.open('/docs', '_blank');
-    byId('btnOpenApi').onclick = () => window.open('/openapi.json', '_blank');
-
-    byId('sendBtn').onclick = async () => {
-      const payload = {
-        user_id: byId('userId').value || null,
-        thread_id: byId('threadId').value || null,
-        message: byId('message').value,
-      };
-      addBubble('user', payload.message);
-      try {
-        const res = await fetch('/worker/chat', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-        raw.textContent = JSON.stringify(data, null, 2);
-        addBubble('assistant', data.response || '(no response)');
-      } catch (e) {
-        const err = { error: e.message };
-        raw.textContent = JSON.stringify(err, null, 2);
-        addBubble('assistant', `Request failed: ${e.message}`);
-      }
+  byId('btnCreateFeedback').onclick = async () => {
+    const type = byId('feedbackType').value;
+    const payload = {
+      user_id: byId('userId').value || null,
+      thread_id: byId('threadId').value || null,
+      feedback_type: type,
+      user_note: byId('feedbackNote').value,
+      assistant_response: 'assistant sample output',
+      corrected_response: byId('feedbackCorrected').value,
+      feature_area: 'nutrition_chat'
     };
+    if (type === 'rating') payload.rating = Number(byId('feedbackRating').value || 5);
+    try {
+      const data = await callApi('/api/ai/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      lastFeedbackId = data.feedback_id;
+      setStatus('feedbackStatus', `Feedback OK: ${lastFeedbackId}`, true);
+    } catch (e) {
+      setStatus('feedbackStatus', `Feedback lỗi: ${e.message}`);
+    }
+  };
 
-    byId('btnNormalize').onclick = async () => {
-      try {
-        const parsed = JSON.parse(byId('crawlerRaw').value);
-        const res = await fetch('/admin/crawler/normalize', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ data: parsed })
-        });
-        const data = await res.json();
-        raw.textContent = JSON.stringify(data, null, 2);
-        if (!res.ok) throw new Error(data.detail || 'Normalize failed');
-        lastNormalized = data.normalized;
-        crawlerStatus.textContent = `Normalized OK: recipes=${data.total_recipes}, ingredients=${data.total_ingredients}`;
-        crawlerStatus.className = 'ok';
-      } catch (e) {
-        crawlerStatus.textContent = `Normalize error: ${e.message}`;
-        crawlerStatus.className = 'warn';
-      }
-    };
+  byId('btnCuration').onclick = async () => {
+    try {
+      const limit = Number(byId('curationLimit').value || 200);
+      const data = await callApi(`/api/ai/curation/nightly?limit=${limit}`, { method: 'POST' });
+      setStatus('curationStatus', `Created=${data.samples_created}, skipped=${data.samples_skipped}`, true);
+    } catch (e) {
+      setStatus('curationStatus', `Curation lỗi: ${e.message}`);
+    }
+  };
 
-    byId('btnIngest').onclick = async () => {
-      try {
-        if (!lastNormalized) throw new Error('No normalized data. Run Normalize first.');
-        const res = await fetch('/admin/crawler/ingest', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ normalized: lastNormalized })
-        });
-        const text = await res.text();
-        let data = {};
-        try { data = JSON.parse(text); } catch (_) { data = { detail: text }; }
-        raw.textContent = JSON.stringify(data, null, 2);
-        if (!res.ok) throw new Error(data.detail || 'Ingest failed');
-        crawlerStatus.textContent = `Ingest OK: recipes+${data.recipes_inserted}, updated=${data.recipes_updated}, links+${data.recipe_links_inserted}`;
-        crawlerStatus.className = 'ok';
-      } catch (e) {
-        crawlerStatus.textContent = `Ingest error: ${e.message}`;
-        crawlerStatus.className = 'warn';
+  byId('btnListSamples').onclick = async () => {
+    try {
+      const data = await callApi('/api/ai/training-samples?limit=50');
+      cachedSamples = data.items || [];
+      setStatus('sampleStatus', `Loaded ${cachedSamples.length} samples`, true);
+    } catch (e) {
+      setStatus('sampleStatus', `List lỗi: ${e.message}`);
+    }
+  };
+
+  byId('btnApproveFirst').onclick = async () => {
+    try {
+      if (!cachedSamples.length) {
+        const list = await callApi('/api/ai/training-samples?status=pending&limit=20');
+        cachedSamples = list.items || [];
       }
+      const first = cachedSamples.find(x => x.status === 'pending');
+      if (!first) throw new Error('Không có sample pending');
+      await callApi(`/api/ai/training-samples/${first.id}/review`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'approved', review_note: 'approved in FE demo' })
+      });
+      setStatus('sampleStatus', `Approved sample: ${first.id}`, true);
+    } catch (e) {
+      setStatus('sampleStatus', `Approve lỗi: ${e.message}`);
+    }
+  };
+
+  byId('btnMealPlan').onclick = async () => {
+    const payload = {
+      user_id: byId('userId').value,
+      budget_vnd_per_day: Number(byId('planBudget').value || 120000),
+      max_cook_time_min: Number(byId('planTime').value || 30),
+      target_calories_per_day: Number(byId('planKcal').value || 2000)
     };
-  </script>
+    try {
+      const data = await callApi('/api/ai/meal-plans/7d', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      setStatus('planStatus', `MealPlan OK: days=${data.total_days}, items=${data.total_items}`, true);
+    } catch (e) {
+      setStatus('planStatus', `MealPlan lỗi: ${e.message}`);
+    }
+  };
+
+  byId('btnNormalize').onclick = async () => {
+    try {
+      const parsed = JSON.parse(byId('crawlerRaw').value);
+      const data = await callApi('/admin/crawler/normalize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: parsed })
+      });
+      lastNormalized = data.normalized;
+      setStatus('crawlerStatus', `Normalize OK: recipes=${data.total_recipes}`, true);
+    } catch (e) {
+      setStatus('crawlerStatus', `Normalize lỗi: ${e.message}`);
+    }
+  };
+
+  byId('btnIngest').onclick = async () => {
+    try {
+      if (!lastNormalized) throw new Error('Cần normalize trước');
+      const data = await callApi('/admin/crawler/ingest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ normalized: lastNormalized })
+      });
+      setStatus('crawlerStatus', `Ingest OK: +${data.recipes_inserted} recipes`, true);
+    } catch (e) {
+      setStatus('crawlerStatus', `Ingest lỗi: ${e.message}`);
+    }
+  };
+</script>
 </body>
 </html>

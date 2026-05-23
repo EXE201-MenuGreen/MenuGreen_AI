@@ -2,6 +2,7 @@
 
 from datetime import date, timedelta
 import uuid
+from typing import Any
 
 from app.core.config import get_settings
 from app.core.supabase_provider import SupabaseProvider
@@ -380,3 +381,199 @@ class UserRepository:
             if len(picked) >= limit:
                 break
         return picked
+
+    def create_feedback_event(self, payload: dict[str, Any]) -> dict | None:
+        client = SupabaseProvider.get_client()
+        if client is None:
+            return None
+        try:
+            res = client.table("ai_feedback_events").insert(payload).execute()
+            rows = res.data or []
+            return rows[0] if rows else None
+        except Exception:
+            return None
+
+    def get_feedback_event(self, feedback_id: str) -> dict | None:
+        client = SupabaseProvider.get_client()
+        if client is None:
+            return None
+        try:
+            rows = (
+                client.table("ai_feedback_events")
+                .select("*")
+                .eq("id", feedback_id)
+                .limit(1)
+                .execute()
+                .data
+                or []
+            )
+            return rows[0] if rows else None
+        except Exception:
+            return None
+
+    def create_training_sample(self, payload: dict[str, Any]) -> dict | None:
+        client = SupabaseProvider.get_client()
+        if client is None:
+            return None
+        try:
+            res = client.table("ai_training_samples").insert(payload).execute()
+            rows = res.data or []
+            return rows[0] if rows else None
+        except Exception:
+            return None
+
+    def list_training_samples(self, status: str | None = None, limit: int = 50) -> list[dict]:
+        client = SupabaseProvider.get_client()
+        if client is None:
+            return []
+        try:
+            query = client.table("ai_training_samples").select("*").order("created_at", desc=True).limit(limit)
+            if status:
+                query = query.eq("status", status)
+            res = query.execute()
+            return res.data or []
+        except Exception:
+            return []
+
+    def review_training_sample(
+        self,
+        sample_id: str,
+        status: str,
+        reviewer_user_id: str | None = None,
+        review_note: str | None = None,
+    ) -> dict | None:
+        client = SupabaseProvider.get_client()
+        if client is None:
+            return None
+        try:
+            payload: dict[str, Any] = {"status": status}
+            if reviewer_user_id:
+                payload["reviewed_by"] = reviewer_user_id
+            if review_note is not None:
+                payload["review_note"] = review_note
+            rows = (
+                client.table("ai_training_samples")
+                .update(payload)
+                .eq("id", sample_id)
+                .execute()
+                .data
+                or []
+            )
+            return rows[0] if rows else None
+        except Exception:
+            return None
+
+    def list_unprocessed_feedback_events(self, limit: int = 200) -> list[dict]:
+        client = SupabaseProvider.get_client()
+        if client is None:
+            return []
+        try:
+            existing = (
+                client.table("ai_training_samples")
+                .select("feedback_id")
+                .limit(5000)
+                .execute()
+                .data
+                or []
+            )
+            used_ids = {str(x.get("feedback_id")) for x in existing if x.get("feedback_id")}
+            events = (
+                client.table("ai_feedback_events")
+                .select("*")
+                .order("created_at", desc=False)
+                .limit(limit)
+                .execute()
+                .data
+                or []
+            )
+            return [e for e in events if str(e.get("id")) not in used_ids]
+        except Exception:
+            return []
+
+    def list_meal_candidates_by_constraints(
+        self,
+        max_price_vnd: int,
+        max_total_time_min: int,
+        max_items: int = 200,
+    ) -> list[dict]:
+        client = SupabaseProvider.get_client()
+        if client is None:
+            return []
+        pool: list[dict] = []
+        try:
+            recipes = (
+                client.table(self.settings.recipes_table)
+                .select("*")
+                .lte("estimated_price_vnd", max_price_vnd)
+                .lte("total_time_min", max_total_time_min)
+                .limit(max_items)
+                .execute()
+                .data
+                or []
+            )
+            for row in recipes:
+                pool.append(
+                    {
+                        "id": row.get("id"),
+                        "source": "recipe",
+                        "name": row.get("title") or row.get("name"),
+                        "calories_kcal": self._to_float(
+                            row.get("calories_kcal", row.get("calories_per_serving"))
+                        ),
+                        "estimated_price_vnd": row.get("estimated_price_vnd"),
+                        "prep_time_min": row.get("prep_time_min", row.get("prep_time_minutes")),
+                        "cook_time_min": row.get("cook_time_min", row.get("cook_time_minutes")),
+                    }
+                )
+        except Exception:
+            pass
+        try:
+            foods = (
+                client.table(self.settings.foods_table)
+                .select("*")
+                .lte("estimated_price_vnd", max_price_vnd)
+                .limit(max_items)
+                .execute()
+                .data
+                or []
+            )
+            for row in foods:
+                pool.append(
+                    {
+                        "id": row.get("id"),
+                        "source": "food",
+                        "name": row.get("name_vi") or row.get("name"),
+                        "calories_kcal": self._to_float(row.get("calories_kcal")),
+                        "estimated_price_vnd": row.get("estimated_price_vnd"),
+                        "prep_time_min": 0,
+                        "cook_time_min": 0,
+                    }
+                )
+        except Exception:
+            pass
+        return [x for x in pool if x.get("name") and self._to_float(x.get("calories_kcal")) > 0]
+
+    def insert_meal_plan_rows(self, rows: list[dict]) -> int:
+        if not rows:
+            return 0
+        client = SupabaseProvider.get_client()
+        if client is None:
+            return 0
+        count = 0
+        for row in rows:
+            try:
+                payload = {
+                    "user_id": row.get("user_id"),
+                    "plan_date": row.get("plan_date"),
+                    "meal_type": row.get("meal_type"),
+                    "target_calories": int(self._to_float(row.get("target_calories"))),
+                    "mode": "ai_7d_budget_time_calories",
+                    "food_name": row.get("food_name"),
+                    "food_id": row.get("food_id"),
+                    "recipe_id": row.get("recipe_id"),
+                }
+                client.table("meal_plans").insert(payload).execute()
+                count += 1
+            except Exception:
+                continue
+        return count
