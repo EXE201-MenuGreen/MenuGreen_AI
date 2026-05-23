@@ -322,6 +322,49 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS notification_settings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL UNIQUE REFERENCES profiles(id) ON DELETE CASCADE,
+  meal_reminder_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  water_reminder_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  workout_reminder_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  subscription_reminder_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  quiet_hours_start TIME,
+  quiet_hours_end TIME,
+  timezone TEXT NOT NULL DEFAULT 'Asia/Ho_Chi_Minh',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS exercise_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  logged_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  activity_type TEXT NOT NULL,
+  duration_min INT,
+  calories_burned_kcal NUMERIC,
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS payment_transactions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  subscription_id UUID REFERENCES subscriptions(id) ON DELETE SET NULL,
+  plan_id UUID REFERENCES subscription_plans(id) ON DELETE SET NULL,
+  provider TEXT NOT NULL,
+  provider_transaction_id TEXT UNIQUE,
+  amount_vnd INT NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'VND',
+  status TEXT NOT NULL DEFAULT 'pending',
+  request_payload JSONB,
+  callback_payload JSONB,
+  paid_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- ============================================================================
 -- AI CONVERSATION TABLES
 -- ============================================================================
@@ -364,6 +407,36 @@ CREATE TABLE IF NOT EXISTS ai_recommendations (
   data JSONB,
   is_read BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS ai_feedback_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  conversation_id UUID REFERENCES ai_conversations(id) ON DELETE SET NULL,
+  message_id UUID REFERENCES ai_messages(id) ON DELETE SET NULL,
+  thread_id TEXT,
+  feedback_type TEXT NOT NULL CHECK (feedback_type IN ('thumbs_up', 'thumbs_down', 'correction', 'rating')),
+  rating SMALLINT CHECK (rating BETWEEN 1 AND 5),
+  user_note TEXT,
+  assistant_response TEXT,
+  corrected_response TEXT,
+  feature_area TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS ai_training_samples (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  feedback_id UUID REFERENCES ai_feedback_events(id) ON DELETE SET NULL,
+  source TEXT NOT NULL DEFAULT 'user_feedback',
+  input_text TEXT NOT NULL,
+  context_json JSONB,
+  expected_output TEXT NOT NULL,
+  labels TEXT[] DEFAULT ARRAY[]::TEXT[],
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'trained')),
+  reviewed_by UUID REFERENCES profiles(id) ON DELETE SET NULL,
+  reviewed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- Legacy table still referenced by optional SQL / older runtime modules
@@ -496,7 +569,10 @@ BEGIN
   NEW.prep_time_minutes := COALESCE(NEW.prep_time_minutes, NEW.prep_time_min);
   NEW.cook_time_minutes := COALESCE(NEW.cook_time_minutes, NEW.cook_time_min);
 
-  NEW.instructions_text := COALESCE(NEW.instructions_text, NEW.instructions #>> '{}');
+  NEW.instructions_text := COALESCE(
+    NEW.instructions_text,
+    to_jsonb(NEW) ->> 'instructions'
+  );
 
   NEW.calories_per_serving := COALESCE(NEW.calories_per_serving, NEW.calories_kcal);
   NEW.protein_per_serving := COALESCE(NEW.protein_per_serving, NEW.protein_g);
@@ -572,11 +648,17 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_profiles_role ON profiles(role);
 CREATE INDEX IF NOT EXISTS idx_subscriptions_user_status ON subscriptions(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_meal_logs_user_logged_at ON meal_logs(user_id, logged_at);
+CREATE INDEX IF NOT EXISTS idx_exercise_logs_user_logged_at ON exercise_logs(user_id, logged_at);
 CREATE INDEX IF NOT EXISTS idx_fridge_items_user_updated ON fridge_items(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_meal_plans_user_plan_date ON meal_plans(user_id, plan_date);
 CREATE INDEX IF NOT EXISTS idx_ai_chat_sessions_user_thread_created ON ai_chat_sessions(user_id, thread_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_ai_conversations_user_created ON ai_conversations(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ai_messages_conversation_created ON ai_messages(conversation_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_payment_transactions_user_created ON payment_transactions(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_payment_transactions_status ON payment_transactions(status);
+CREATE INDEX IF NOT EXISTS idx_ai_feedback_events_user_created ON ai_feedback_events(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_feedback_events_feature_type ON ai_feedback_events(feature_area, feedback_type);
+CREATE INDEX IF NOT EXISTS idx_ai_training_samples_status_created ON ai_training_samples(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sync_dead_letter_source_created ON sync_dead_letter(source_table, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_foods_name_search
@@ -692,13 +774,18 @@ ALTER TABLE foods ENABLE ROW LEVEL SECURITY;
 ALTER TABLE recipes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE recipe_ingredients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE meal_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE exercise_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE fridge_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE meal_plans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notification_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payment_transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ai_conversations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ai_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ai_chat_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ai_recommendations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ai_feedback_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ai_training_samples ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_inventory ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sync_offsets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sync_dead_letter ENABLE ROW LEVEL SECURITY;
@@ -733,6 +820,15 @@ CREATE POLICY meal_logs_update_own ON meal_logs FOR UPDATE USING (auth.uid() = u
 DROP POLICY IF EXISTS meal_logs_delete_own ON meal_logs;
 CREATE POLICY meal_logs_delete_own ON meal_logs FOR DELETE USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS exercise_logs_select_own ON exercise_logs;
+CREATE POLICY exercise_logs_select_own ON exercise_logs FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS exercise_logs_insert_own ON exercise_logs;
+CREATE POLICY exercise_logs_insert_own ON exercise_logs FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS exercise_logs_update_own ON exercise_logs;
+CREATE POLICY exercise_logs_update_own ON exercise_logs FOR UPDATE USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS exercise_logs_delete_own ON exercise_logs;
+CREATE POLICY exercise_logs_delete_own ON exercise_logs FOR DELETE USING (auth.uid() = user_id);
+
 DROP POLICY IF EXISTS fridge_items_select_own ON fridge_items;
 CREATE POLICY fridge_items_select_own ON fridge_items FOR SELECT USING (auth.uid() = user_id);
 DROP POLICY IF EXISTS fridge_items_insert_own ON fridge_items;
@@ -757,6 +853,22 @@ DROP POLICY IF EXISTS notifications_insert_own ON notifications;
 CREATE POLICY notifications_insert_own ON notifications FOR INSERT WITH CHECK (auth.uid() = user_id);
 DROP POLICY IF EXISTS notifications_update_own ON notifications;
 CREATE POLICY notifications_update_own ON notifications FOR UPDATE USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS notification_settings_select_own ON notification_settings;
+CREATE POLICY notification_settings_select_own ON notification_settings FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS notification_settings_insert_own ON notification_settings;
+CREATE POLICY notification_settings_insert_own ON notification_settings FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS notification_settings_update_own ON notification_settings;
+CREATE POLICY notification_settings_update_own ON notification_settings FOR UPDATE USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS notification_settings_delete_own ON notification_settings;
+CREATE POLICY notification_settings_delete_own ON notification_settings FOR DELETE USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS payment_transactions_select_own ON payment_transactions;
+CREATE POLICY payment_transactions_select_own ON payment_transactions FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS payment_transactions_insert_own ON payment_transactions;
+CREATE POLICY payment_transactions_insert_own ON payment_transactions FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS payment_transactions_update_own ON payment_transactions;
+CREATE POLICY payment_transactions_update_own ON payment_transactions FOR UPDATE USING (auth.uid() = user_id);
 
 DROP POLICY IF EXISTS ai_conversations_select_own ON ai_conversations;
 CREATE POLICY ai_conversations_select_own ON ai_conversations FOR SELECT USING (auth.uid() = user_id);
@@ -817,6 +929,18 @@ DROP POLICY IF EXISTS ai_recommendations_insert_own ON ai_recommendations;
 CREATE POLICY ai_recommendations_insert_own ON ai_recommendations FOR INSERT WITH CHECK (auth.uid() = user_id);
 DROP POLICY IF EXISTS ai_recommendations_update_own ON ai_recommendations;
 CREATE POLICY ai_recommendations_update_own ON ai_recommendations FOR UPDATE USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS ai_feedback_events_select_own ON ai_feedback_events;
+CREATE POLICY ai_feedback_events_select_own ON ai_feedback_events FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS ai_feedback_events_insert_own ON ai_feedback_events;
+CREATE POLICY ai_feedback_events_insert_own ON ai_feedback_events FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS ai_feedback_events_update_own ON ai_feedback_events;
+CREATE POLICY ai_feedback_events_update_own ON ai_feedback_events FOR UPDATE USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS ai_feedback_events_delete_own ON ai_feedback_events;
+CREATE POLICY ai_feedback_events_delete_own ON ai_feedback_events FOR DELETE USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS ai_training_samples_admin_all ON ai_training_samples;
+CREATE POLICY ai_training_samples_admin_all ON ai_training_samples FOR ALL USING (is_admin()) WITH CHECK (is_admin());
 
 DROP POLICY IF EXISTS foods_select_all ON foods;
 CREATE POLICY foods_select_all ON foods FOR SELECT USING (true);
@@ -893,6 +1017,24 @@ BEFORE UPDATE ON subscriptions
 FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_notification_settings_updated_at ON notification_settings;
+CREATE TRIGGER update_notification_settings_updated_at
+BEFORE UPDATE ON notification_settings
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_exercise_logs_updated_at ON exercise_logs;
+CREATE TRIGGER update_exercise_logs_updated_at
+BEFORE UPDATE ON exercise_logs
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_payment_transactions_updated_at ON payment_transactions;
+CREATE TRIGGER update_payment_transactions_updated_at
+BEFORE UPDATE ON payment_transactions
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
 DROP TRIGGER IF EXISTS update_ingredients_updated_at ON ingredients;
 CREATE TRIGGER update_ingredients_updated_at
 BEFORE UPDATE ON ingredients
@@ -926,6 +1068,12 @@ EXECUTE FUNCTION update_updated_at_column();
 DROP TRIGGER IF EXISTS update_sync_offsets_updated_at ON sync_offsets;
 CREATE TRIGGER update_sync_offsets_updated_at
 BEFORE UPDATE ON sync_offsets
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_ai_training_samples_updated_at ON ai_training_samples;
+CREATE TRIGGER update_ai_training_samples_updated_at
+BEFORE UPDATE ON ai_training_samples
 FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column();
 
