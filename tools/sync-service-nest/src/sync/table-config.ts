@@ -60,11 +60,11 @@ export const TABLE_CONFIGS: Record<string, TableSyncConfig> = {
     cursorColumn: "created_at",
     onConflict: "id",
   },
-  notifications: {
-    table: "notifications",
+  notification_settings: {
+    table: "notification_settings",
     mode: "incremental",
-    cursorColumn: "created_at",
-    onConflict: "id",
+    cursorColumn: "updated_at",
+    onConflict: "user_id",
   },
 };
 
@@ -79,5 +79,5 @@ export const DEFAULT_TABLE_ORDER: string[] = [
   "meal_logs",
   "fridge_items",
   "meal_plans",
-  "notifications",
+  "notification_settings",
 ];

@@ -8,6 +8,7 @@ from app.core.onnx_intent import OnnxIntentClassifier
 from app.repositories.user_repository import UserRepository
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.services.context_builder import build_context_snapshot
+from app.services.safety_service import SafetyService
 
 
 class CoachService:
@@ -16,6 +17,7 @@ class CoachService:
     def __init__(self) -> None:
         self.settings = get_settings()
         self.repo = UserRepository()
+        self.safety = SafetyService()
         self.model_dir = Path(__file__).resolve().parents[2] / self.settings.intent_model_dir
         self.classifier = self._try_load_onnx()
 
@@ -76,19 +78,26 @@ class CoachService:
             context_snapshot=context,
             model_name=self.settings.llm_model,
         )
+        safe_response, safety_flags = self.safety.apply(
+            user_message=request.message,
+            response_text=response_text,
+            context=context,
+        )
+
         self.repo.save_chat_session(
             user_id=request.user_id,
             thread_id=thread_id,
             role="assistant",
-            content=response_text,
+            content=safe_response,
             context_snapshot=context,
             model_name=self.settings.llm_model,
         )
+        final_source = f"{source}+safety" if safety_flags else source
 
         return ChatResponse(
-            response=response_text,
+            response=safe_response,
             intent=intent,
-            source=source,
+            source=final_source,
             request_id=request_id,
             thread_id=thread_id,
             intent_confidence=confidence,

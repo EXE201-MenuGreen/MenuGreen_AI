@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     discovery_delay_seconds: float = 2.0
     discovery_max_per_run: int = 20
     serve_frontend: bool = True
+    safety_max_response_chars: int = 1200
+    safety_block_medical_keywords: bool = True
 
 
 @lru_cache(maxsize=1)

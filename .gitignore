@@ -1,4 +1,7 @@
 ﻿.venv/
+.env
+.env.*
+runtime/.env
 __pycache__/
 *.pyc
 train_error.log
