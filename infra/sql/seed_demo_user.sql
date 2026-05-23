@@ -301,11 +301,11 @@ BEGIN
         WHERE table_schema = 'public' AND table_name = 'user_item_interactions'
     ) THEN
         BEGIN
-            INSERT INTO user_item_interactions (user_id, item_type, item_id, action, metadata)
+            INSERT INTO user_item_interactions (user_id, item_type, item_id, event_type, metadata)
             SELECT
                 '11111111-1111-1111-1111-111111111111',
                 'recipe',
-                r.id::text,
+                r.id,
                 'view',
                 '{"source":"seed"}'::jsonb
             FROM recipes r

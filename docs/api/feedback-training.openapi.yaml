@@ -1,0 +1,305 @@
+openapi: 3.0.3
+info:
+  title: MenuGreen AI Feedback & Training API
+  version: 0.1.0
+  description: |
+    Contract for collecting AI feedback from FE and curating training samples.
+servers:
+  - url: https://api.menugreen.local
+paths:
+  /api/ai/feedback:
+    post:
+      summary: Submit feedback for an AI answer
+      tags: [AI Feedback]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFeedbackRequest'
+      responses:
+        '201':
+          description: Feedback created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateFeedbackResponse'
+        '400':
+          description: Validation error
+
+  /api/ai/feedback/{feedbackId}/to-training-sample:
+    post:
+      summary: Convert feedback event into a training sample
+      tags: [AI Training]
+      parameters:
+        - in: path
+          name: feedbackId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSampleFromFeedbackRequest'
+      responses:
+        '201':
+          description: Training sample created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateTrainingSampleResponse'
+        '404':
+          description: Feedback not found
+
+  /api/ai/training-samples:
+    post:
+      summary: Create training sample directly
+      tags: [AI Training]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTrainingSampleRequest'
+      responses:
+        '201':
+          description: Training sample created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateTrainingSampleResponse'
+    get:
+      summary: List training samples
+      tags: [AI Training]
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [pending, approved, rejected, trained]
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 500
+      responses:
+        '200':
+          description: Training sample list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TrainingSample'
+
+  /api/ai/training-samples/{sampleId}/review:
+    patch:
+      summary: Review a training sample (admin/reviewer)
+      tags: [AI Training]
+      parameters:
+        - in: path
+          name: sampleId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewTrainingSampleRequest'
+      responses:
+        '200':
+          description: Training sample updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingSample'
+        '404':
+          description: Sample not found
+
+components:
+  schemas:
+    CreateFeedbackRequest:
+      type: object
+      required:
+        - user_id
+        - feedback_type
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        conversation_id:
+          type: string
+          format: uuid
+          nullable: true
+        message_id:
+          type: string
+          format: uuid
+          nullable: true
+        thread_id:
+          type: string
+          nullable: true
+        feedback_type:
+          type: string
+          enum: [thumbs_up, thumbs_down, correction, rating]
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+          nullable: true
+          description: Required when feedback_type is rating
+        user_note:
+          type: string
+          nullable: true
+        assistant_response:
+          type: string
+          nullable: true
+        corrected_response:
+          type: string
+          nullable: true
+          description: Recommended when feedback_type is correction
+        feature_area:
+          type: string
+          nullable: true
+          enum:
+            - nutrition_chat
+            - meal_recommendation
+            - meal_plan_generation
+            - ingredient_utilization
+            - office_program
+            - gym_program
+    CreateFeedbackResponse:
+      type: object
+      properties:
+        feedback_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+
+    CreateTrainingSampleRequest:
+      type: object
+      required:
+        - input_text
+        - expected_output
+      properties:
+        feedback_id:
+          type: string
+          format: uuid
+          nullable: true
+        source:
+          type: string
+          default: user_feedback
+        input_text:
+          type: string
+        context_json:
+          type: object
+          nullable: true
+          additionalProperties: true
+        expected_output:
+          type: string
+        labels:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [pending, approved, rejected, trained]
+          default: pending
+
+    CreateSampleFromFeedbackRequest:
+      type: object
+      properties:
+        input_text:
+          type: string
+          nullable: true
+          description: Fallback if backend cannot infer from chat history
+        expected_output:
+          type: string
+          nullable: true
+          description: Fallback if backend cannot infer from corrected_response
+        labels:
+          type: array
+          items:
+            type: string
+
+    CreateTrainingSampleResponse:
+      type: object
+      properties:
+        sample_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, approved, rejected, trained]
+        created_at:
+          type: string
+          format: date-time
+
+    ReviewTrainingSampleRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: [approved, rejected, trained]
+        reviewer_user_id:
+          type: string
+          format: uuid
+        review_note:
+          type: string
+          nullable: true
+
+    TrainingSample:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        feedback_id:
+          type: string
+          format: uuid
+          nullable: true
+        source:
+          type: string
+        input_text:
+          type: string
+        context_json:
+          type: object
+          nullable: true
+          additionalProperties: true
+        expected_output:
+          type: string
+        labels:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [pending, approved, rejected, trained]
+        reviewed_by:
+          type: string
+          format: uuid
+          nullable: true
+        reviewed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time

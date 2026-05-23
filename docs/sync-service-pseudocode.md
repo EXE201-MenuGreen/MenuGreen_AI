@@ -22,6 +22,15 @@
 
 ## 2) Option A: Incremental polling (fast MVP)
 
+### Cursor column mapping (important)
+
+Not all BE tables have `updated_at`. Use per-table cursor column:
+
+| Table | Cursor column |
+|---|---|
+| `profiles`, `subscription_plans`, `subscriptions`, `ingredients`, `foods`, `recipes`, `fridge_items` | `updated_at` |
+| `recipe_ingredients`, `meal_logs`, `meal_plans`, `ai_conversations`, `ai_messages`, `notifications` | `created_at` |
+
 ### NestJS pseudo-code
 
 ```ts
@@ -55,12 +64,13 @@ export class SyncScheduler {
 
     for (const table of tables) {
       const cursor = await this.state.getOffset(table); // last_synced_at
-      const rows = await this.beReader.fetchChangedRows(table, cursor);
+      const cursorCol = getCursorColumn(table);
+      const rows = await this.beReader.fetchChangedRows(table, cursorCol, cursor);
       if (!rows.length) continue;
 
       try {
         await this.aiWriter.upsertBatch(table, rows);
-        await this.state.saveOffset(table, maxUpdatedAt(rows));
+        await this.state.saveOffset(table, maxTimestamp(rows, cursorCol));
       } catch (err) {
         await this.state.pushDeadLetter({
           source_table: table,
@@ -74,10 +84,10 @@ export class SyncScheduler {
 
 @Injectable()
 export class BeReaderService {
-  async fetchChangedRows(table: string, after?: string) {
+  async fetchChangedRows(table: string, cursorCol: string, after?: string) {
     // SELECT * FROM <table>
-    // WHERE updated_at > :after
-    // ORDER BY updated_at ASC
+    // WHERE <cursorCol> > :after
+    // ORDER BY <cursorCol> ASC
     // LIMIT 2000;
   }
 }
@@ -175,8 +185,17 @@ async function handleEvent(evt: SyncEvent) {
 ## 4) Python worker sketch
 
 ```python
+def cursor_column(table: str) -> str:
+    updated_tables = {
+        "profiles", "subscription_plans", "subscriptions",
+        "ingredients", "foods", "recipes", "fridge_items"
+    }
+    return "updated_at" if table in updated_tables else "created_at"
+
+
 def sync_table(be_conn, sb_client, table, last_synced_at):
-    rows = fetch_changed_rows(be_conn, table, last_synced_at)
+    col = cursor_column(table)
+    rows = fetch_changed_rows(be_conn, table, col, last_synced_at)
     if not rows:
         return last_synced_at
 
@@ -184,7 +203,7 @@ def sync_table(be_conn, sb_client, table, last_synced_at):
     for chunk in chunked(rows, 300):
         payload = [normalize_by_table(table, r) for r in chunk]
         sb_client.table(table).upsert(payload).execute()
-        max_ts = max(max_ts, max(r["updated_at"] for r in chunk))
+        max_ts = max(max_ts, max(r[col] for r in chunk))
     return max_ts
 
 
@@ -207,9 +226,8 @@ def run_sync_loop():
 
 ## 5) Quick implementation checklist
 
-1. Add `updated_at` index in BE source tables used by polling.
+1. Add index on the real cursor column (`updated_at` or `created_at`) for each source table.
 2. Start with polling, then move to event-driven.
 3. Use batched upsert (200-500 rows/chunk) to reduce timeout risk.
 4. Keep dead-letter logging for retry/audit.
 5. Do not sync sensitive fields like `password_hash` into AI runtime reads unless required.
-
