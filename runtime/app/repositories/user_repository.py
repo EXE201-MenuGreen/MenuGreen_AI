@@ -241,7 +241,8 @@ class UserRepository:
                 mapped = found[0].get("user_id")
                 return str(mapped) if mapped else None
         except Exception:
-            return None
+            # Keep going: mapping table may be missing in some environments.
+            pass
 
         if not auto_create:
             return None
@@ -387,11 +388,17 @@ class UserRepository:
         if client is None:
             return None
         try:
-            res = client.table("ai_feedback_events").insert(payload).execute()
+            raw_user_id = payload.get("user_id")
+            resolved_id = self.resolve_user_id(str(raw_user_id) if raw_user_id else None)
+            if not resolved_id:
+                return None
+            insert_payload = dict(payload)
+            insert_payload["user_id"] = resolved_id
+            res = client.table("ai_feedback_events").insert(insert_payload).execute()
             rows = res.data or []
             return rows[0] if rows else None
-        except Exception:
-            return None
+        except Exception as exc:
+            raise RuntimeError(f"create_feedback_event failed: {exc}") from exc
 
     def get_feedback_event(self, feedback_id: str) -> dict | None:
         client = SupabaseProvider.get_client()
@@ -419,8 +426,8 @@ class UserRepository:
             res = client.table("ai_training_samples").insert(payload).execute()
             rows = res.data or []
             return rows[0] if rows else None
-        except Exception:
-            return None
+        except Exception as exc:
+            raise RuntimeError(f"create_training_sample failed: {exc}") from exc
 
     def list_training_samples(self, status: str | None = None, limit: int = 50) -> list[dict]:
         client = SupabaseProvider.get_client()
