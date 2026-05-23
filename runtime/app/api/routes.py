@@ -72,7 +72,10 @@ def admin_crawler_ingest(request: CrawlerIngestRequest) -> CrawlerIngestResponse
 @router.post("/api/ai/feedback", response_model=CreateFeedbackResponse, status_code=201)
 def create_feedback(request: CreateFeedbackRequest) -> CreateFeedbackResponse:
     payload = request.model_dump()
-    created = user_repo.create_feedback_event(payload)
+    try:
+        created = user_repo.create_feedback_event(payload)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     if not created:
         raise HTTPException(status_code=500, detail="Cannot create feedback event")
     return CreateFeedbackResponse(
@@ -108,7 +111,10 @@ def create_sample_from_feedback(
         "labels": request.labels,
         "status": "pending",
     }
-    created = user_repo.create_training_sample(payload)
+    try:
+        created = user_repo.create_training_sample(payload)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     if not created:
         raise HTTPException(status_code=500, detail="Cannot create training sample")
 
@@ -121,7 +127,10 @@ def create_sample_from_feedback(
 
 @router.post("/api/ai/training-samples", response_model=CreateTrainingSampleResponse, status_code=201)
 def create_training_sample(request: CreateTrainingSampleRequest) -> CreateTrainingSampleResponse:
-    created = user_repo.create_training_sample(request.model_dump())
+    try:
+        created = user_repo.create_training_sample(request.model_dump())
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     if not created:
         raise HTTPException(status_code=500, detail="Cannot create training sample")
     return CreateTrainingSampleResponse(
