@@ -25,3 +25,20 @@ python -X utf8 tools\training\export_onnx.py
 ## Lưu ý
 - Nên dùng Python 3.11.x cho stack training/export ONNX ổn định hơn.
 - Nếu bạn đã có model ONNX sẵn từ project cũ, có thể bỏ qua bước train/export và chỉ cần copy vào `runtime/models/intent_onnx`.
+
+## Environment Split (recommended)
+- Runtime app: Python `3.13` + `runtime/requirements-runtime.txt`
+- Training/ONNX export: Python `3.11` + lock file `tools/training/requirements-export-311.lock.txt`
+
+Bootstrap export env:
+```powershell
+cd D:\EXE\RAG_AI_MenuGreen
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\training\setup_export_env_311.ps1
+```
+
+Run export using 3.11 env:
+```powershell
+cd D:\EXE\RAG_AI_MenuGreen
+.\.venv311\Scripts\Activate.ps1
+python -X utf8 tools\training\export_onnx.py
+```

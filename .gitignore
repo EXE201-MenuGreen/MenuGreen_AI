@@ -1,4 +1,8 @@
 ﻿.venv/
+.venv311/
+.venv*/
+**/.venv/
+**/.venv311/
 .env
 .env.*
 runtime/.env

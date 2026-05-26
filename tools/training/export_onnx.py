@@ -178,14 +178,14 @@ def predict(text: str):
 
 
 test_cases = [
-    ("TÃ¬m mÃ³n Äƒn vá»›i cÃ  chua", "recipe_search"),
-    ("TÃ­nh BMR cho tÃ´i", "nutrition_calc"),
-    ("NguyÃªn liá»‡u nÃ o sáº¯p háº¿t háº¡n?", "inventory_check"),
-    ("LÃªn thá»±c Ä‘Æ¡n 7 ngÃ y giáº£m cÃ¢n", "meal_plan"),
+    ("Tìm món ăn với cà chua", "recipe_search"),
+    ("Tính BMR cho tôi", "nutrition_calc"),
+    ("Nguyên liệu nào sắp hết hạn?", "inventory_check"),
+    ("Lên thực đơn 7 ngày giảm cân", "meal_plan"),
     ("https://cookpad.com/vn/recipe/1", "web_browsing"),
-    ("Phá»Ÿ bÃ² bao nhiÃªu calo?", "calorie_lookup"),
-    ("Ä‚n gÃ¬ tá»‘t cho tim máº¡ch?", "general"),
-    ("Thá»i tiáº¿t hÃ´m nay tháº¿ nÃ o?", "unknown"),
+    ("Phở bò bao nhiêu calo?", "calorie_lookup"),
+    ("Ăn gì tốt cho tim mạch?", "general"),
+    ("Thời tiết hôm nay thế nào?", "unknown"),
 ]
 
 print(f"\n{'Text':<45} {'Expected':<20} {'Predicted':<20} {'Score':<8} {'OK?'}")
@@ -202,7 +202,7 @@ print(f"\nAccuracy: {correct}/{len(test_cases)} ({correct / len(test_cases) * 10
 
 
 print("\nLatency benchmark (100 calls):")
-benchmark_text = "TÃ¬m cÃ´ng thá»©c náº¥u phá»Ÿ bÃ² ngon"
+benchmark_text = "Tìm công thức nấu phở bò ngon"
 timings = []
 for _ in range(100):
     start = time.perf_counter()
