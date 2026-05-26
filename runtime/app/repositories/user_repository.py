@@ -3,6 +3,7 @@
 from datetime import date, timedelta
 import uuid
 from typing import Any
+from datetime import datetime, timezone
 
 from app.core.config import get_settings
 from app.core.supabase_provider import SupabaseProvider
@@ -453,22 +454,25 @@ class UserRepository:
         if client is None:
             return None
         try:
-            payload: dict[str, Any] = {"status": status}
+            payload: dict[str, Any] = {
+                "status": status,
+                "reviewed_at": datetime.now(timezone.utc).isoformat(),
+            }
             if reviewer_user_id:
                 payload["reviewed_by"] = reviewer_user_id
-            if review_note is not None:
-                payload["review_note"] = review_note
+            client.table("ai_training_samples").update(payload).eq("id", sample_id).execute()
             rows = (
                 client.table("ai_training_samples")
-                .update(payload)
+                .select("*")
                 .eq("id", sample_id)
+                .limit(1)
                 .execute()
                 .data
                 or []
             )
             return rows[0] if rows else None
-        except Exception:
-            return None
+        except Exception as exc:
+            raise RuntimeError(f"review_training_sample failed: {exc}") from exc
 
     def list_unprocessed_feedback_events(self, limit: int = 200) -> list[dict]:
         client = SupabaseProvider.get_client()

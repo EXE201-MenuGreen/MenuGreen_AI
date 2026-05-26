@@ -149,12 +149,15 @@ def list_training_samples(status: str | None = None, limit: int = 50) -> dict:
 
 @router.patch("/api/ai/training-samples/{sampleId}/review", response_model=TrainingSample)
 def review_training_sample(sampleId: str, request: ReviewTrainingSampleRequest) -> TrainingSample:
-    updated = user_repo.review_training_sample(
-        sample_id=sampleId,
-        status=request.status,
-        reviewer_user_id=request.reviewer_user_id,
-        review_note=request.review_note,
-    )
+    try:
+        updated = user_repo.review_training_sample(
+            sample_id=sampleId,
+            status=request.status,
+            reviewer_user_id=request.reviewer_user_id,
+            review_note=request.review_note,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     if not updated:
         raise HTTPException(status_code=404, detail="Sample not found")
     return TrainingSample(**updated)
