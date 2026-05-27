@@ -7,6 +7,7 @@ Run:
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 from collections import Counter
@@ -49,6 +50,15 @@ CONFIG = {
     "output_dir": str(ROOT_DIR / "tools" / "training" / "menu_green_intent_model"),
     "dataset_path": str(TRAINING_DIR / "intent_dataset.json"),
 }
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--dataset", type=str, default=CONFIG["dataset_path"])
+parser.add_argument("--continue-from", dest="continue_from", type=str, default="")
+args = parser.parse_args()
+
+CONFIG["dataset_path"] = args.dataset
+if args.continue_from:
+    CONFIG["model_name"] = args.continue_from
 
 print("\nConfig:")
 for key, value in CONFIG.items():
@@ -209,14 +219,14 @@ for file_name in sorted(os.listdir(save_path)):
 
 print("\nQuick inference test:")
 test_cases = [
-    "TÃ¬m mÃ³n Äƒn vá»›i cÃ  chua",
-    "TÃ­nh BMR cho tÃ´i",
-    "NguyÃªn liá»‡u nÃ o sáº¯p háº¿t háº¡n?",
-    "LÃªn thá»±c Ä‘Æ¡n 7 ngÃ y",
+    "Tìm món ăn với cà chua",
+    "Tính BMR cho tôi",
+    "Nguyên liệu nào sắp hết hạn?",
+    "Lên thực đơn 7 ngày",
     "https://cookpad.com/vn/recipe/123",
-    "Phá»Ÿ bÃ² bao nhiÃªu calo?",
-    "Ä‚n gÃ¬ tá»‘t cho sá»©c khá»e?",
-    "Thá»i tiáº¿t hÃ´m nay tháº¿ nÃ o?",
+    "Phở bò bao nhiêu calo?",
+    "Ăn gì tốt cho sức khỏe?",
+    "Thời tiết hôm nay thế nào?",
 ]
 
 classifier = pipeline(

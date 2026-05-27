@@ -32,9 +32,23 @@ class CoachService:
         text = (message or "").lower().strip()
         if not text:
             return None
+        search_keywords = [
+            "search",
+            "tra cứu",
+            "tra cuu",
+            "tìm thông tin",
+            "tim thong tin",
+            "nguồn tham khảo",
+            "nguon tham khao",
+            "latest",
+            "newest",
+            "research",
+        ]
         meal_keywords = ["an gi", "ăn gì", "goi y bua", "gợi ý bữa", "thuc don", "thực đơn"]
         nutrition_keywords = ["bao nhieu carb", "bao nhieu protein", "bao nhieu fat", "con bao nhieu", "calo", "kcal"]
         recipe_keywords = ["pho", "phở", "bun", "bún", "com", "cơm", "mon", "món", "recipe", "cong thuc", "công thức"]
+        if any(k in text for k in search_keywords):
+            return "ai_search"
         if any(k in text for k in meal_keywords):
             return "meal_plan"
         if any(k in text for k in nutrition_keywords):
@@ -133,11 +147,34 @@ class CoachService:
                     name = row.get("name", "unknown")
                     kcal = row.get("calories_kcal", "?")
                     suggestions.append(f"{name} ({kcal} kcal)")
-            suggestion_text = ", ".join(suggestions) if suggestions else "chưa có món khớp trong DB"
+            if not suggestions:
+                # Fallback: always provide at least one practical recommendation
+                # from current DB pool so the user never gets an empty answer.
+                fallback_items = self.repo.suggest_meal_plan_items(
+                    remaining_kcal=float(remaining.get("calories_kcal", 0) or 0),
+                    remaining_protein=float(remaining.get("protein_g", 0) or 0),
+                    remaining_carbs=float(remaining.get("carbs_g", 0) or 0),
+                    remaining_fat=float(remaining.get("fat_g", 0) or 0),
+                    limit=1,
+                )
+                for item in fallback_items:
+                    name = item.get("name", "unknown")
+                    kcal = item.get("calories_kcal", "?")
+                    suggestions.append(f"{name} ({kcal} kcal)")
+            suggestion_text = ", ".join(suggestions) if suggestions else "trứng luộc + rau luộc (gợi ý mặc định)"
             return (
                 f"Theo từ khóa '{query}', mình gợi ý: {suggestion_text}. "
                 f"Hôm nay bạn đang ở mức {totals.get('calories_kcal', 0)} kcal "
                 f"và còn {remaining.get('calories_kcal', 0)} kcal cho ngày hôm nay."
+            )
+
+        if intent == "ai_search":
+            q = (message or "").strip()
+            return (
+                f"Mình đã nhận yêu cầu AI search cho: '{q}'. "
+                "Hiện runtime này đang trả câu trả lời dạng định hướng để BE tích hợp search provider "
+                "(web/search API) ở bước tiếp theo. "
+                "Bạn có thể bật pipeline search để mình trả kết quả có nguồn trích dẫn."
             )
 
         if intent == "meal_plan":
