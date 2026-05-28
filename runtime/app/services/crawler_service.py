@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from app.core.supabase_provider import SupabaseProvider
+from app.core.database_provider import DatabaseProvider
 
 
 ING_PATTERN = re.compile(r"^\s*(\d+(?:[\.,]\d+)?)?\s*([a-zA-Z%gmlkgL]+)?\s*(.*)$")
@@ -47,15 +47,23 @@ def parse_ingredient(text: str) -> ParsedIngredient:
 
 
 def normalize_recipe(raw: dict) -> dict:
+    raw_instructions = raw.get("steps", []) if isinstance(raw.get("steps"), list) else raw.get("instructions")
+    if isinstance(raw_instructions, str):
+        instructions = [line.strip() for line in raw_instructions.splitlines() if line.strip()]
+    elif isinstance(raw_instructions, list):
+        instructions = raw_instructions
+    else:
+        instructions = []
     return {
-        "name": (raw.get("name") or "").strip(),
+        "title": (raw.get("title") or raw.get("name") or "").strip(),
         "description": (raw.get("description") or "").strip() or None,
-        "instructions": "\n".join(raw.get("steps", [])) if isinstance(raw.get("steps"), list) else (raw.get("instructions") or None),
+        "instructions": instructions,
         "image_url": raw.get("image") or raw.get("image_url"),
-        "dietary_tags": raw.get("tags", []),
-        "prep_time_minutes": raw.get("prep_time_minutes"),
-        "cook_time_minutes": raw.get("cook_time_minutes"),
+        "prep_time_min": raw.get("prep_time_min") or raw.get("prep_time_minutes"),
+        "cook_time_min": raw.get("cook_time_min") or raw.get("cook_time_minutes"),
         "servings": raw.get("servings"),
+        "meal_type": raw.get("meal_type"),
+        "difficulty": raw.get("difficulty"),
     }
 
 
@@ -68,7 +76,7 @@ def normalize_payload(data: Any) -> dict:
         if not isinstance(item, dict):
             continue
         r = normalize_recipe(item)
-        if not r["name"]:
+        if not r["title"]:
             continue
         local_id = f"recipe_local_{idx}"
         r["_local_id"] = local_id
@@ -104,8 +112,8 @@ def _get_or_create_ingredient_id(client, name: str, counters: Counters) -> str |
 
     rows = (
         client.table("ingredients")
-        .select("id,name,calories_per_100g,protein_per_100g,carbs_per_100g,fat_per_100g,fiber_per_100g")
-        .ilike("name", n)
+        .select("id,name_vi,calories_kcal,protein_g,carbs_g,fat_g")
+        .ilike("name_vi", n)
         .limit(1)
         .execute()
         .data
@@ -114,27 +122,25 @@ def _get_or_create_ingredient_id(client, name: str, counters: Counters) -> str |
     if rows:
         found = rows[0]
         # Enrich existing ingredient if it still has empty nutrition.
-        if float(found.get("calories_per_100g") or 0) <= 0:
+        if float(found.get("calories_kcal") or 0) <= 0:
             nut = _lookup_food_nutrition(client, n)
             if nut is not None:
                 client.table("ingredients").update(nut).eq("id", found["id"]).execute()
         return rows[0]["id"]
 
     nut = _lookup_food_nutrition(client, n) or {
-        "calories_per_100g": 0,
-        "protein_per_100g": 0,
-        "carbs_per_100g": 0,
-        "fat_per_100g": 0,
-        "fiber_per_100g": 0,
+        "calories_kcal": 0,
+        "protein_g": 0,
+        "carbs_g": 0,
+        "fat_g": 0,
     }
     ins = client.table("ingredients").insert(
         {
-            "name": n,
-            "calories_per_100g": nut["calories_per_100g"],
-            "protein_per_100g": nut["protein_per_100g"],
-            "carbs_per_100g": nut["carbs_per_100g"],
-            "fat_per_100g": nut["fat_per_100g"],
-            "fiber_per_100g": nut["fiber_per_100g"],
+            "name_vi": n,
+            "calories_kcal": nut["calories_kcal"],
+            "protein_g": nut["protein_g"],
+            "carbs_g": nut["carbs_g"],
+            "fat_g": nut["fat_g"],
             "category": "unknown",
         }
     ).execute().data or []
@@ -161,7 +167,7 @@ def _lookup_food_nutrition(client, ingredient_name: str) -> dict[str, float] | N
         rows = (
             client.table("foods")
             .select("*")
-            .ilike("name", f"%{q}%")
+            .ilike("name_vi", f"%{q}%")
             .limit(1)
             .execute()
             .data
@@ -173,31 +179,32 @@ def _lookup_food_nutrition(client, ingredient_name: str) -> dict[str, float] | N
         return None
     r = rows[0]
     return {
-        "calories_per_100g": _to_float(r.get("calories_kcal_per_100g", r.get("calories_kcal"))),
-        "protein_per_100g": _to_float(r.get("protein_g_per_100g", r.get("protein_g"))),
-        "carbs_per_100g": _to_float(r.get("carbs_g_per_100g", r.get("carbs_g"))),
-        "fat_per_100g": _to_float(r.get("fat_g_per_100g", r.get("fat_g"))),
-        "fiber_per_100g": _to_float(r.get("fiber_g_per_100g", r.get("fiber_g"))),
+        "calories_kcal": _to_float(r.get("calories_kcal")),
+        "protein_g": _to_float(r.get("protein_g")),
+        "carbs_g": _to_float(r.get("carbs_g")),
+        "fat_g": _to_float(r.get("fat_g")),
     }
 
 
 def _upsert_recipe(client, row: dict, counters: Counters) -> str | None:
-    name = (row.get("name") or "").strip()
-    if not name:
+    title = (row.get("title") or "").strip()
+    if not title:
         return None
 
     payload = {
-        "name": name,
+        "title": title,
         "description": row.get("description"),
         "instructions": row.get("instructions"),
-        "prep_time_minutes": row.get("prep_time_minutes"),
-        "cook_time_minutes": row.get("cook_time_minutes"),
+        "prep_time_min": row.get("prep_time_min"),
+        "cook_time_min": row.get("cook_time_min"),
+        "total_time_min": _to_float(row.get("prep_time_min")) + _to_float(row.get("cook_time_min")),
         "servings": row.get("servings"),
         "image_url": row.get("image_url"),
-        "dietary_tags": row.get("dietary_tags") or [],
+        "meal_type": row.get("meal_type"),
+        "difficulty": row.get("difficulty"),
     }
 
-    existing = client.table("recipes").select("id,name").eq("name", name).limit(1).execute().data or []
+    existing = client.table("recipes").select("id,title").eq("title", title).limit(1).execute().data or []
     if existing:
         rid = existing[0]["id"]
         client.table("recipes").update(payload).eq("id", rid).execute()
@@ -213,9 +220,9 @@ def _upsert_recipe(client, row: dict, counters: Counters) -> str | None:
 
 
 def ingest_normalized(normalized: dict) -> Counters:
-    client = SupabaseProvider.get_client()
+    client = DatabaseProvider.get_client()
     if client is None:
-        raise RuntimeError("Supabase is not configured")
+        raise RuntimeError("PostgreSQL is not configured")
 
     recipes = normalized.get("recipes", [])
     parsed_ingredients = normalized.get("parsed_ingredients", [])
@@ -253,7 +260,7 @@ def ingest_normalized(normalized: dict) -> Counters:
             .select("id")
             .eq("recipe_id", rid)
             .eq("ingredient_id", iid)
-            .eq("amount", amount_val)
+            .eq("quantity", amount_val)
             .eq("unit", unit_val)
             .limit(1)
             .execute()
@@ -267,7 +274,7 @@ def ingest_normalized(normalized: dict) -> Counters:
             {
                 "recipe_id": rid,
                 "ingredient_id": iid,
-                "amount": amount_val,
+                "quantity": amount_val,
                 "unit": unit_val,
             }
         ).execute()
@@ -291,7 +298,7 @@ def _recompute_recipe_nutrition(client, recipe_id: str) -> None:
 
         links = (
             client.table("recipe_ingredients")
-            .select("ingredient_id,amount")
+            .select("ingredient_id,quantity")
             .eq("recipe_id", recipe_id)
             .execute()
             .data
@@ -305,7 +312,7 @@ def _recompute_recipe_nutrition(client, recipe_id: str) -> None:
             return
         ingredients = (
             client.table("ingredients")
-            .select("id,calories_per_100g,protein_per_100g,carbs_per_100g,fat_per_100g")
+            .select("id,calories_kcal,protein_g,carbs_g,fat_g")
             .in_("id", ing_ids)
             .execute()
             .data
@@ -319,24 +326,24 @@ def _recompute_recipe_nutrition(client, recipe_id: str) -> None:
         total_f = 0.0
         for link in links:
             iid = link.get("ingredient_id")
-            amount_g = _to_float(link.get("amount"))
+            amount_g = _to_float(link.get("quantity"))
             if not iid or amount_g <= 0:
                 continue
             ing = ing_map.get(iid)
             if not ing:
                 continue
             factor = amount_g / 100.0
-            total_kcal += factor * _to_float(ing.get("calories_per_100g"))
-            total_p += factor * _to_float(ing.get("protein_per_100g"))
-            total_c += factor * _to_float(ing.get("carbs_per_100g"))
-            total_f += factor * _to_float(ing.get("fat_per_100g"))
+            total_kcal += factor * _to_float(ing.get("calories_kcal"))
+            total_p += factor * _to_float(ing.get("protein_g"))
+            total_c += factor * _to_float(ing.get("carbs_g"))
+            total_f += factor * _to_float(ing.get("fat_g"))
 
         client.table("recipes").update(
             {
-                "calories_per_serving": round(total_kcal / servings, 1),
-                "protein_per_serving": round(total_p / servings, 1),
-                "carbs_per_serving": round(total_c / servings, 1),
-                "fat_per_serving": round(total_f / servings, 1),
+                "calories_kcal": round(total_kcal / servings, 1),
+                "protein_g": round(total_p / servings, 1),
+                "carbs_g": round(total_c / servings, 1),
+                "fat_g": round(total_f / servings, 1),
             }
         ).eq("id", recipe_id).execute()
     except Exception:

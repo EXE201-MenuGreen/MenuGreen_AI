@@ -14,18 +14,17 @@ class Settings(BaseSettings):
     app_name: str = "MenuGreen Runtime"
     debug: bool = False
 
-    supabase_url: str = ""
-    supabase_key: str = ""
     postgres_url: str = ""
 
     # Table names are configurable to support schema drift during migration.
     profiles_table: str = "profiles"
     subscriptions_table: str = "subscriptions"
     meal_logs_table: str = "meal_logs"
-    ai_chat_sessions_table: str = "ai_chat_sessions"
+    ai_conversations_table: str = "ai_conversations"
+    ai_messages_table: str = "ai_messages"
     foods_table: str = "foods"
     recipes_table: str = "recipes"
-    external_user_map_table: str = "external_user_map"
+    external_user_map_table: str = ""
 
     # ONNX intent
     intent_model_dir: str = "models/intent_onnx"

@@ -2,7 +2,7 @@
 
 ## 1) Core table mapping
 
-| BE table | AI/Supabase table | Notes |
+| BE table | AI/PostgreSQL table | Notes |
 |---|---|---|
 | `users` | `users` (shadow) + `profiles.id` | Keep `profiles.id` equal to BE `users.id` when syncing |
 | `profiles` | `profiles` | Upsert full profile and macro targets |
@@ -96,8 +96,8 @@ export class BeReaderService {
 export class AiWriterService {
   async upsertBatch(table: string, rows: any[]) {
     const payload = rows.map((r) => normalizeByTable(table, r));
-    // Supabase upsert in chunks:
-    // supabase.from(table).upsert(payload, { onConflict: '<pk_or_unique>' })
+    // PostgreSQL upsert in chunks:
+    // INSERT ... ON CONFLICT (<pk_or_unique>) DO UPDATE ...
   }
 }
 ```
@@ -216,7 +216,7 @@ def run_sync_loop():
     for t in tables:
         cursor = get_offset(t)
         try:
-            new_cursor = sync_table(be_conn, supabase, t, cursor)
+            new_cursor = sync_table(be_conn, postgres_conn, t, cursor)
             save_offset(t, new_cursor)
         except Exception as e:
             save_dead_letter(t, str(e))

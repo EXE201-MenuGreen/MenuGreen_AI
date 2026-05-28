@@ -3,7 +3,7 @@ export type SyncMode = "incremental" | "full";
 export interface TableSyncConfig {
   table: string;
   mode: SyncMode;
-  cursorColumn?: "updated_at" | "created_at";
+  cursorColumn?: string;
   onConflict: string;
 }
 

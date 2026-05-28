@@ -131,6 +131,7 @@ model = AutoModelForSequenceClassification.from_pretrained(
     num_labels=CONFIG["num_labels"],
     id2label={index: name for index, name in enumerate(label_names)},
     label2id={name: index for index, name in enumerate(label_names)},
+    ignore_mismatched_sizes=True,
 )
 
 total_params = sum(parameter.numel() for parameter in model.parameters())

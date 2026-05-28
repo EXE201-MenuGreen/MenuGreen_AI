@@ -1,4 +1,4 @@
--- RAG_AI_MenuGreen Supabase bootstrap (BE-aligned + AI-runtime compatible)
+-- RAG_AI_MenuGreen PostgreSQL bootstrap (legacy compatibility schema)
 -- Date: 2026-05-23
 -- Purpose:
 -- 1) Align schema with Backend DBML for easier synchronization
@@ -53,7 +53,7 @@ $$;
 
 -- ============================================================================
 -- USERS / AUTH SHADOW
--- Note: auth.users is still the auth source of truth in Supabase.
+-- Note: legacy compatibility schema kept for older migrations.
 -- public.users exists for BE migration compatibility only.
 -- ============================================================================
 

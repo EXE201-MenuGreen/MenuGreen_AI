@@ -1,40 +1,43 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, OnModuleDestroy } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { Pool } from "pg";
 
 @Injectable()
-export class SyncStateService {
-  private readonly client: SupabaseClient;
+export class SyncStateService implements OnModuleDestroy {
+  private readonly pool: Pool;
 
   constructor(private readonly config: ConfigService) {
-    const url = this.config.get<string>("SUPABASE_URL");
-    const key = this.config.get<string>("SUPABASE_SERVICE_ROLE_KEY");
-    if (!url || !key) {
-      throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+    const connectionString =
+      this.config.get<string>("POSTGRES_URL") ||
+      this.config.get<string>("AI_DATABASE_URL");
+    if (!connectionString) {
+      throw new Error("Missing POSTGRES_URL or AI_DATABASE_URL");
     }
-    this.client = createClient(url, key, { auth: { persistSession: false } });
+    this.pool = new Pool({ connectionString });
+  }
+
+  async onModuleDestroy() {
+    await this.pool.end();
   }
 
   async getCursor(table: string): Promise<string | null> {
-    const { data, error } = await this.client
-      .from("sync_offsets")
-      .select("last_synced_at")
-      .eq("source_table", table)
-      .limit(1)
-      .maybeSingle();
-    if (error) throw error;
-    return data?.last_synced_at ?? null;
+    const res = await this.pool.query(
+      "SELECT last_synced_at FROM sync_offsets WHERE source_table = $1 LIMIT 1",
+      [table],
+    );
+    return res.rows[0]?.last_synced_at?.toISOString?.() ?? res.rows[0]?.last_synced_at ?? null;
   }
 
   async saveCursor(table: string, cursor: string): Promise<void> {
-    const { error } = await this.client.from("sync_offsets").upsert(
-      {
-        source_table: table,
-        last_synced_at: cursor,
-      },
-      { onConflict: "source_table" },
+    await this.pool.query(
+      `
+        INSERT INTO sync_offsets (source_table, last_synced_at)
+        VALUES ($1, $2)
+        ON CONFLICT (source_table)
+        DO UPDATE SET last_synced_at = EXCLUDED.last_synced_at
+      `,
+      [table, cursor],
     );
-    if (error) throw error;
   }
 
   async addDeadLetter(input: {
@@ -44,13 +47,18 @@ export class SyncStateService {
     error: string;
     retryCount?: number;
   }): Promise<void> {
-    const { error } = await this.client.from("sync_dead_letter").insert({
-      source_table: input.sourceTable,
-      event_id: input.eventId ?? null,
-      payload: input.payload,
-      error: input.error,
-      retry_count: input.retryCount ?? 0,
-    });
-    if (error) throw error;
+    await this.pool.query(
+      `
+        INSERT INTO sync_dead_letter (source_table, event_id, payload, error, retry_count)
+        VALUES ($1, $2, $3, $4, $5)
+      `,
+      [
+        input.sourceTable,
+        input.eventId ?? null,
+        JSON.stringify(input.payload),
+        input.error,
+        input.retryCount ?? 0,
+      ],
+    );
   }
 }

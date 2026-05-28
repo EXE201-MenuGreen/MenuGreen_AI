@@ -1,6 +1,6 @@
 # Sync Service (NestJS Skeleton)
 
-BE database -> AI Supabase synchronization worker with:
+BE database -> AI PostgreSQL synchronization worker with:
 - cron scheduler
 - upsert by table
 - dead-letter logging into `sync_dead_letter`

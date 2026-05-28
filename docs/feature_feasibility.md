@@ -11,7 +11,7 @@ Co. Kha thi va nen lam theo 2 lop:
 ### Lop A - Domain food (uu tien cao)
 - Crawl du lieu mon Viet (ten mon, nguyen lieu, huong dan, image, category).
 - Chuan hoa ingredient parser.
-- Ingest vao `recipes`, `ingredients`, `recipe_ingredients`, `foods`, `food_aliases`.
+- Ingest vao `recipes`, `ingredients`, `recipe_ingredients`, `foods`.
 - Dung du lieu nay cho:
   - AI Coach goi y bua an,
   - Macro estimation,
@@ -31,7 +31,7 @@ Co. Kha thi va nen lam theo 2 lop:
 
 ## 4) To-do de trien khai an toan
 1. Dung adapter crawler -> CSV/JSON schema thong nhat.
-2. Ingest foods/recipes/aliases vao Supabase.
+2. Ingest foods/recipes vao PostgreSQL.
 3. Tao optional interaction table cho recommendation (user_id, item_id, event_type, ts).
 4. Build baseline recommenders cho FOOD:
    - content-only

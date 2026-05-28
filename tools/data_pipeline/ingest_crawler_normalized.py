@@ -1,5 +1,5 @@
 ﻿"""
-Ingest normalized crawler data into Supabase tables:
+Ingest normalized crawler data into PostgreSQL tables:
 - recipes
 - ingredients
 - recipe_ingredients
@@ -42,19 +42,18 @@ def get_or_create_ingredient_id(client, name: str, counters: Counters) -> str | 
     if not n:
         return None
 
-    q = client.table("ingredients").select("id,name").ilike("name", n).limit(1).execute()
+    q = client.table("ingredients").select("id,name_vi").ilike("name_vi", n).limit(1).execute()
     rows = q.data or []
     if rows:
         return rows[0]["id"]
 
     ins = client.table("ingredients").insert(
         {
-            "name": n,
-            "calories_per_100g": 0,
-            "protein_per_100g": 0,
-            "carbs_per_100g": 0,
-            "fat_per_100g": 0,
-            "fiber_per_100g": 0,
+            "name_vi": n,
+            "calories_kcal": 0,
+            "protein_g": 0,
+            "carbs_g": 0,
+            "fat_g": 0,
             "category": "unknown",
         }
     ).execute()
@@ -67,20 +66,19 @@ def get_or_create_ingredient_id(client, name: str, counters: Counters) -> str | 
 
 
 def upsert_recipe_by_name(client, row: dict, counters: Counters) -> str | None:
-    name = (row.get("name") or "").strip()
-    if not name:
+    title = (row.get("title") or row.get("name") or "").strip()
+    if not title:
         return None
 
-    existing = client.table("recipes").select("id,name").eq("name", name).limit(1).execute().data or []
+    existing = client.table("recipes").select("id,title").eq("title", title).limit(1).execute().data or []
     payload = {
-        "name": name,
+        "title": title,
         "description": row.get("description"),
-        "instructions": row.get("instructions"),
-        "prep_time_minutes": row.get("prep_time_minutes"),
-        "cook_time_minutes": row.get("cook_time_minutes"),
+        "instructions": row.get("instructions") if isinstance(row.get("instructions"), list) else [],
+        "prep_time_min": row.get("prep_time_min") or row.get("prep_time_minutes"),
+        "cook_time_min": row.get("cook_time_min") or row.get("cook_time_minutes"),
         "servings": row.get("servings"),
         "image_url": row.get("image_url"),
-        "dietary_tags": row.get("dietary_tags") or [],
     }
 
     if existing:
@@ -106,7 +104,7 @@ def link_recipe_ingredient(client, recipe_id: str, ingredient_id: str, amount: f
         .select("id")
         .eq("recipe_id", recipe_id)
         .eq("ingredient_id", ingredient_id)
-        .eq("amount", amount_val)
+        .eq("quantity", amount_val)
         .eq("unit", unit_val)
         .limit(1)
         .execute()
@@ -120,7 +118,7 @@ def link_recipe_ingredient(client, recipe_id: str, ingredient_id: str, amount: f
         {
             "recipe_id": recipe_id,
             "ingredient_id": ingredient_id,
-            "amount": amount_val,
+            "quantity": amount_val,
             "unit": unit_val,
         }
     ).execute()
