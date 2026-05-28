@@ -31,22 +31,20 @@ pip install -r requirements-runtime.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-## Demo User Seed (Supabase)
-- Runtime currently reads/writes user context only when `user_id` is a valid UUID.
-- To avoid `Goal=unknown` and `0.0 kcal` during demo, seed a fixed user:
-  - SQL file: `infra/sql/seed_demo_user.sql`
-  - Demo `user_id`: `11111111-1111-1111-1111-111111111111`
-- Run in Supabase SQL Editor, then call `/worker/chat` with that UUID.
+## Demo User Seed (PostgreSQL)
+- Runtime connects with `POSTGRES_URL`.
+- Runtime can auto-create a local PostgreSQL demo user for non-UUID IDs.
+- For fixed demo data, seed PostgreSQL and call `/worker/chat` with that UUID.
 
 ## External User ID Support
-- If client sends non-UUID user id (e.g. `user_abc_123`), runtime can auto-map to internal UUID.
-- Run migration once in Supabase SQL Editor:
-  - `infra/sql/migration_external_user_map.sql`
+- If client sends non-UUID user id (e.g. `user_abc_123`), runtime derives a stable internal UUID.
 - Runtime will auto-create:
-  - `profiles` row (default target values)
-  - `external_user_map` row (`external_user_id -> profiles.id`)
+  - `roles` default row when needed
+  - `users` row
+  - `profiles` row
+  - `health_profiles` row with default target values
 
 ## Next Steps
 - Port working endpoints from old project into `runtime/app` modules.
-- Add Supabase repositories for profile + meal logs context.
+- Add PostgreSQL repositories for profile + meal logs context.
 - Add contract tests before replacing old service.

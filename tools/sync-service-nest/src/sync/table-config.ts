@@ -5,18 +5,24 @@ export const TABLE_CONFIGS: Record<string, TableSyncConfig> = {
     table: "profiles",
     mode: "incremental",
     cursorColumn: "updated_at",
-    onConflict: "id",
+    onConflict: "user_id",
+  },
+  health_profiles: {
+    table: "health_profiles",
+    mode: "incremental",
+    cursorColumn: "updated_at",
+    onConflict: "user_id",
   },
   subscription_plans: {
     table: "subscription_plans",
     mode: "incremental",
-    cursorColumn: "updated_at",
+    cursorColumn: "created_at",
     onConflict: "id",
   },
   subscriptions: {
     table: "subscriptions",
     mode: "incremental",
-    cursorColumn: "updated_at",
+    cursorColumn: "created_at",
     onConflict: "id",
   },
   ingredients: {
@@ -45,7 +51,7 @@ export const TABLE_CONFIGS: Record<string, TableSyncConfig> = {
   meal_logs: {
     table: "meal_logs",
     mode: "incremental",
-    cursorColumn: "created_at",
+    cursorColumn: "logged_at",
     onConflict: "id",
   },
   fridge_items: {
@@ -54,22 +60,29 @@ export const TABLE_CONFIGS: Record<string, TableSyncConfig> = {
     cursorColumn: "updated_at",
     onConflict: "id",
   },
-  meal_plans: {
-    table: "meal_plans",
+  meal_plan_headers: {
+    table: "meal_plan_headers",
     mode: "incremental",
     cursorColumn: "created_at",
     onConflict: "id",
   },
-  notification_settings: {
-    table: "notification_settings",
+  meal_plan_items: {
+    table: "meal_plan_items",
     mode: "incremental",
-    cursorColumn: "updated_at",
-    onConflict: "user_id",
+    cursorColumn: "created_at",
+    onConflict: "id",
+  },
+  notifications: {
+    table: "notifications",
+    mode: "incremental",
+    cursorColumn: "created_at",
+    onConflict: "id",
   },
 };
 
 export const DEFAULT_TABLE_ORDER: string[] = [
   "profiles",
+  "health_profiles",
   "subscription_plans",
   "subscriptions",
   "ingredients",
@@ -78,6 +91,7 @@ export const DEFAULT_TABLE_ORDER: string[] = [
   "recipe_ingredients",
   "meal_logs",
   "fridge_items",
-  "meal_plans",
-  "notification_settings",
+  "meal_plan_headers",
+  "meal_plan_items",
+  "notifications",
 ];

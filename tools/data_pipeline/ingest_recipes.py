@@ -19,10 +19,11 @@ def to_float(value, default=0.0):
         return default
 
 
-def split_tags(raw: str):
+def parse_instructions(value: str):
+    raw = (value or "").strip()
     if not raw:
         return []
-    return [x.strip() for x in raw.split("|") if x.strip()]
+    return [line.strip() for line in raw.replace("|", "\n").splitlines() if line.strip()]
 
 
 def run(csv_path: str):
@@ -33,23 +34,26 @@ def run(csv_path: str):
     with open(csv_path, "r", encoding="utf-8-sig", newline="") as f:
         reader = csv.DictReader(f)
         for r in reader:
-            name = (r.get("name") or "").strip()
-            if not name:
+            title = (r.get("title") or r.get("name") or "").strip()
+            if not title:
                 continue
             rows.append(
                 {
-                    "name": name,
+                    "title": title,
                     "description": (r.get("description") or "").strip() or None,
-                    "instructions": (r.get("instructions") or "").strip() or None,
-                    "prep_time_minutes": to_int(r.get("prep_time_minutes"), 0) or None,
-                    "cook_time_minutes": to_int(r.get("cook_time_minutes"), 0) or None,
+                    "instructions": parse_instructions(r.get("instructions") or ""),
+                    "prep_time_min": to_int(r.get("prep_time_min") or r.get("prep_time_minutes"), 0) or None,
+                    "cook_time_min": to_int(r.get("cook_time_min") or r.get("cook_time_minutes"), 0) or None,
+                    "total_time_min": to_int(r.get("total_time_min"), 0) or None,
                     "servings": to_int(r.get("servings"), 0) or None,
+                    "difficulty": (r.get("difficulty") or "").strip() or None,
+                    "meal_type": (r.get("meal_type") or "").strip() or None,
+                    "estimated_price_vnd": to_int(r.get("estimated_price_vnd"), 0) or None,
                     "image_url": (r.get("image_url") or "").strip() or None,
-                    "dietary_tags": split_tags((r.get("dietary_tags") or "").strip()),
-                    "calories_per_serving": to_float(r.get("calories_per_serving"), 0.0) or None,
-                    "protein_per_serving": to_float(r.get("protein_per_serving"), 0.0) or None,
-                    "carbs_per_serving": to_float(r.get("carbs_per_serving"), 0.0) or None,
-                    "fat_per_serving": to_float(r.get("fat_per_serving"), 0.0) or None,
+                    "calories_kcal": to_float(r.get("calories_kcal") or r.get("calories_per_serving"), 0.0) or None,
+                    "protein_g": to_float(r.get("protein_g") or r.get("protein_per_serving"), 0.0) or None,
+                    "carbs_g": to_float(r.get("carbs_g") or r.get("carbs_per_serving"), 0.0) or None,
+                    "fat_g": to_float(r.get("fat_g") or r.get("fat_per_serving"), 0.0) or None,
                 }
             )
 
@@ -57,8 +61,23 @@ def run(csv_path: str):
         print("No valid recipe rows")
         return
 
-    client.table(settings.recipes_table).upsert(rows, on_conflict="name").execute()
-    print(f"Upserted recipes: {len(rows)}")
+    written = 0
+    for row in rows:
+        existing = (
+            client.table(settings.recipes_table)
+            .select("id")
+            .eq("title", row["title"])
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        if existing:
+            client.table(settings.recipes_table).update(row).eq("id", existing[0]["id"]).execute()
+        else:
+            client.table(settings.recipes_table).insert(row).execute()
+        written += 1
+    print(f"Upserted recipes: {written}")
 
 
 if __name__ == "__main__":

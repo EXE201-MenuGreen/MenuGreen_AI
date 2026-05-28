@@ -8,7 +8,7 @@
 ## Phase 2: Data layer
 - [ ] Implement `profiles` repository.
 - [ ] Implement `meal_logs` (7-day + today totals) repository.
-- [ ] Add integration tests with Supabase staging.
+- [ ] Add integration tests with PostgreSQL staging.
 
 ## Phase 3: Coach behavior
 - [ ] Build prompt with explicit user context snapshot.

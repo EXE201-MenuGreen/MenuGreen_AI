@@ -1,20 +1,25 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, OnModuleDestroy } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { Pool } from "pg";
 import { TableSyncConfig } from "./sync.types";
 
 @Injectable()
-export class AiWriterService {
+export class AiWriterService implements OnModuleDestroy {
   private readonly logger = new Logger(AiWriterService.name);
-  private readonly client: SupabaseClient;
+  private readonly pool: Pool;
 
   constructor(private readonly config: ConfigService) {
-    const url = this.config.get<string>("SUPABASE_URL");
-    const key = this.config.get<string>("SUPABASE_SERVICE_ROLE_KEY");
-    if (!url || !key) {
-      throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+    const connectionString =
+      this.config.get<string>("POSTGRES_URL") ||
+      this.config.get<string>("AI_DATABASE_URL");
+    if (!connectionString) {
+      throw new Error("Missing POSTGRES_URL or AI_DATABASE_URL");
     }
-    this.client = createClient(url, key, { auth: { persistSession: false } });
+    this.pool = new Pool({ connectionString });
+  }
+
+  async onModuleDestroy() {
+    await this.pool.end();
   }
 
   async upsertBatch(
@@ -22,13 +27,46 @@ export class AiWriterService {
     rows: Record<string, unknown>[],
   ): Promise<number> {
     if (!rows.length) return 0;
-    const { error } = await this.client
-      .from(cfg.table)
-      .upsert(rows, { onConflict: cfg.onConflict, ignoreDuplicates: false });
-    if (error) {
-      this.logger.error(`Upsert failed for ${cfg.table}: ${error.message}`);
+
+    const columns = Object.keys(rows[0]);
+    if (!columns.length) return 0;
+
+    const params: unknown[] = [];
+    const valuesSql = rows
+      .map((row, rowIndex) => {
+        const placeholders = columns.map((column, colIndex) => {
+          params.push(row[column]);
+          return `$${rowIndex * columns.length + colIndex + 1}`;
+        });
+        return `(${placeholders.join(", ")})`;
+      })
+      .join(", ");
+
+    const updateSql = columns
+      .filter((column) => column !== cfg.onConflict)
+      .map((column) => `${quoteIdent(column)} = EXCLUDED.${quoteIdent(column)}`)
+      .join(", ");
+
+    const sql = `
+      INSERT INTO ${quoteIdent(cfg.table)} (${columns.map(quoteIdent).join(", ")})
+      VALUES ${valuesSql}
+      ON CONFLICT (${quoteIdent(cfg.onConflict)})
+      DO UPDATE SET ${updateSql || `${quoteIdent(cfg.onConflict)} = EXCLUDED.${quoteIdent(cfg.onConflict)}`}
+    `;
+
+    try {
+      await this.pool.query(sql, params);
+      return rows.length;
+    } catch (error) {
+      this.logger.error(`Upsert failed for ${cfg.table}: ${String(error)}`);
       throw error;
     }
-    return rows.length;
   }
+}
+
+function quoteIdent(value: string): string {
+  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(value)) {
+    throw new Error(`Unsafe SQL identifier: ${value}`);
+  }
+  return `"${value}"`;
 }

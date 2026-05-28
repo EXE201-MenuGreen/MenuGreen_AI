@@ -5,11 +5,9 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    supabase_url: str = ""
-    supabase_key: str = ""
+    postgres_url: str = ""
 
     foods_table: str = "foods"
-    food_aliases_table: str = "food_aliases"
     recipes_table: str = "recipes"
 
     class Config:

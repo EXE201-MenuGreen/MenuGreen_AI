@@ -36,6 +36,7 @@ class CreateFeedbackResponse(BaseModel):
 
 
 class CreateTrainingSampleRequest(BaseModel):
+    user_id: str | None = None
     feedback_id: str | None = None
     source: str = "user_feedback"
     input_text: str
@@ -76,4 +77,3 @@ class TrainingSample(BaseModel):
     reviewed_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
-

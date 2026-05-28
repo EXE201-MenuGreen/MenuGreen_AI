@@ -1,4 +1,4 @@
--- Seed 1 demo user for runtime testing (Supabase SQL Editor)
+-- Seed 1 demo user for runtime testing (PostgreSQL)
 -- Safe to run multiple times.
 
 BEGIN;

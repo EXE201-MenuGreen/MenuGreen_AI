@@ -1,12 +1,13 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from datetime import date, timedelta
+import re
 import uuid
 from typing import Any
 from datetime import datetime, timezone
 
 from app.core.config import get_settings
-from app.core.supabase_provider import SupabaseProvider
+from app.core.database_provider import DatabaseProvider
 
 
 class UserRepository:
@@ -28,19 +29,31 @@ class UserRepository:
         if not resolved_id:
             return None
 
-        client = SupabaseProvider.get_client()
+        client = DatabaseProvider.get_client()
         if client is None:
             return None
         try:
             res = (
                 client.table(self.settings.profiles_table)
                 .select("*")
-                .eq("id", resolved_id)
+                .eq("user_id", resolved_id)
                 .limit(1)
                 .execute()
             )
             data = res.data or []
-            return data[0] if data else None
+            profile = data[0] if data else {}
+            health = (
+                client.table("health_profiles")
+                .select("*")
+                .eq("user_id", resolved_id)
+                .limit(1)
+                .execute()
+                .data
+                or []
+            )
+            if health:
+                profile.update(health[0])
+            return profile or None
         except Exception:
             try:
                 # Compatibility fallback for legacy schema/view.
@@ -61,14 +74,15 @@ class UserRepository:
         if not resolved_id:
             return "free"
 
-        client = SupabaseProvider.get_client()
+        client = DatabaseProvider.get_client()
         if client is None:
             return "free"
         try:
             res = (
                 client.table(self.settings.subscriptions_table)
-                .select("tier,is_active,plan,status")
+                .select("*")
                 .eq("user_id", resolved_id)
+                .eq("status", "active")
                 .limit(1)
                 .execute()
             )
@@ -76,9 +90,21 @@ class UserRepository:
             if not data:
                 return "free"
             row = data[0]
-            if row.get("tier"):
-                return row.get("tier", "free")
-            return row.get("plan", "free")
+            plan_id = row.get("plan_id")
+            if not plan_id:
+                return "free"
+            plans = (
+                client.table("subscription_plans")
+                .select("name,feature_group")
+                .eq("id", plan_id)
+                .limit(1)
+                .execute()
+                .data
+                or []
+            )
+            if not plans:
+                return "free"
+            return plans[0].get("feature_group") or plans[0].get("name") or "free"
         except Exception:
             try:
                 res = (
@@ -103,7 +129,7 @@ class UserRepository:
         if not resolved_id:
             return []
 
-        client = SupabaseProvider.get_client()
+        client = DatabaseProvider.get_client()
         if client is None:
             return []
 
@@ -113,8 +139,8 @@ class UserRepository:
                 client.table(self.settings.meal_logs_table)
                 .select("*")
                 .eq("user_id", resolved_id)
-                .gte("date", start_date)
-                .order("date", desc=False)
+                .gte("logged_at", f"{start_date}T00:00:00+00:00")
+                .order("logged_at", desc=False)
                 .execute()
             )
             return res.data or []
@@ -159,21 +185,39 @@ class UserRepository:
         if not resolved_id:
             return False
 
-        client = SupabaseProvider.get_client()
+        client = DatabaseProvider.get_client()
         if client is None:
             return False
 
         try:
-            payload = {
-                "user_id": resolved_id,
-                "thread_id": thread_id,
-                "role": role,
-                "content": content,
-                "context_snapshot": context_snapshot,
-                "tokens_used": tokens_used,
-                "model_name": model_name,
-            }
-            client.table(self.settings.ai_chat_sessions_table).insert(payload).execute()
+            conversation_id = str(uuid.UUID(thread_id)) if self.is_uuid(thread_id) else str(
+                uuid.uuid5(uuid.NAMESPACE_URL, f"menugreen:{resolved_id}:{thread_id}")
+            )
+            existing = (
+                client.table(self.settings.ai_conversations_table)
+                .select("id")
+                .eq("id", conversation_id)
+                .limit(1)
+                .execute()
+                .data
+                or []
+            )
+            if not existing:
+                client.table(self.settings.ai_conversations_table).insert(
+                    {
+                        "id": conversation_id,
+                        "user_id": resolved_id,
+                        "title": (context_snapshot or {}).get("intent") or "AI chat",
+                    }
+                ).execute()
+            client.table(self.settings.ai_messages_table).insert(
+                {
+                    "conversation_id": conversation_id,
+                    "role": role,
+                    "content": content,
+                    "tokens_used": tokens_used,
+                }
+            ).execute()
             return True
         except Exception:
             return False
@@ -182,14 +226,14 @@ class UserRepository:
         query = (keyword or "").strip()
         if not query:
             return []
-        client = SupabaseProvider.get_client()
+        client = DatabaseProvider.get_client()
         if client is None:
             return []
         try:
             res = (
                 client.table(self.settings.recipes_table)
                 .select("*")
-                .ilike("name", f"%{query}%")
+                .ilike("title", f"%{query}%")
                 .limit(limit)
                 .execute()
             )
@@ -201,18 +245,30 @@ class UserRepository:
         query = (keyword or "").strip()
         if not query:
             return []
-        client = SupabaseProvider.get_client()
+        client = DatabaseProvider.get_client()
         if client is None:
             return []
         try:
             res = (
                 client.table(self.settings.foods_table)
                 .select("*")
-                .ilike("name", f"%{query}%")
+                .ilike("name_vi", f"%{query}%")
                 .limit(limit)
                 .execute()
             )
-            return [self._normalize_macro_row(r) for r in (res.data or [])]
+            rows = res.data or []
+            if len(rows) < limit:
+                more = (
+                    client.table(self.settings.foods_table)
+                    .select("*")
+                    .ilike("name_en", f"%{query}%")
+                    .limit(limit - len(rows))
+                    .execute()
+                    .data
+                    or []
+                )
+                rows.extend(more)
+            return [self._normalize_macro_row(r) for r in rows]
         except Exception:
             return []
 
@@ -225,9 +281,12 @@ class UserRepository:
         if self.is_uuid(raw):
             return raw
 
-        client = SupabaseProvider.get_client()
+        client = DatabaseProvider.get_client()
         if client is None:
             return None
+        if not self.settings.external_user_map_table:
+            return self._ensure_external_user(raw, client) if auto_create else None
+
         try:
             found = (
                 client.table(self.settings.external_user_map_table)
@@ -249,29 +308,81 @@ class UserRepository:
             return None
 
         try:
-            created_profile = (
-                client.table(self.settings.profiles_table)
-                .insert(
+            return None
+        except Exception:
+            return None
+
+    def _ensure_external_user(self, external_user_id: str, client) -> str | None:
+        user_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"menugreen-user:{external_user_id}"))
+        try:
+            existing = client.table("users").select("id").eq("id", user_id).limit(1).execute().data or []
+            if existing:
+                return user_id
+
+            role_rows = client.table("roles").select("id").eq("name", "user").limit(1).execute().data or []
+            if role_rows:
+                role_id = str(role_rows[0]["id"])
+            else:
+                role_id = str(uuid.uuid5(uuid.NAMESPACE_URL, "menugreen-role:user"))
+                client.table("roles").insert(
                     {
-                        "full_name": f"External-{raw[:16]}",
+                        "id": role_id,
+                        "name": "user",
+                        "description": "Default application user",
+                    }
+                ).execute()
+
+            profile_rows = client.table("profiles").select("user_id").eq("user_id", user_id).limit(1).execute().data or []
+            if not profile_rows:
+                client.table("profiles").insert(
+                    {
+                        "user_id": user_id,
+                        "full_name": f"External-{external_user_id[:16]}",
+                    }
+                ).execute()
+
+            health_rows = (
+                client.table("health_profiles").select("user_id").eq("user_id", user_id).limit(1).execute().data or []
+            )
+            if not health_rows:
+                client.table("health_profiles").insert(
+                    {
+                        "user_id": user_id,
                         "goal": "maintain",
                         "target_calories": 2000,
                         "target_protein_g": 120,
                         "target_carbs_g": 220,
                         "target_fat_g": 60,
                     }
-                )
-                .execute()
-                .data
-                or []
+                ).execute()
+
+            ai_profile_rows = (
+                client.table("user_ai_profiles").select("user_id").eq("user_id", user_id).limit(1).execute().data or []
             )
-            if not created_profile:
-                return None
-            internal_id = str(created_profile[0]["id"])
-            client.table(self.settings.external_user_map_table).insert(
-                {"external_user_id": raw, "user_id": internal_id}
+            if not ai_profile_rows:
+                client.table("user_ai_profiles").insert(
+                    {
+                        "user_id": user_id,
+                        "preferences": {},
+                        "disliked_foods": [],
+                        "eating_pattern": {},
+                        "favorite_cuisines": [],
+                        "calorie_preference": {},
+                    }
+                ).execute()
+
+            email_local = re.sub(r"[^a-zA-Z0-9._-]+", "-", external_user_id).strip("-._")[:48] or "external"
+            client.table("users").insert(
+                {
+                    "id": user_id,
+                    "role_id": role_id,
+                    "email": f"{email_local}@local.menugreen",
+                    "password_hash": "external-user",
+                    "email_confirmed": True,
+                    "is_active": True,
+                }
             ).execute()
-            return internal_id
+            return user_id
         except Exception:
             return None
 
@@ -297,7 +408,7 @@ class UserRepository:
         )
         return {
             "id": row.get("id"),
-            "name": row.get("name"),
+            "name": row.get("title") or row.get("name_vi") or row.get("name_en") or row.get("name"),
             "calories_kcal": round(kcal, 1),
             "protein_g": round(protein, 1),
             "carbs_g": round(carbs, 1),
@@ -313,7 +424,7 @@ class UserRepository:
         remaining_fat: float,
         limit: int = 3,
     ) -> list[dict]:
-        client = SupabaseProvider.get_client()
+        client = DatabaseProvider.get_client()
         if client is None:
             return []
 
@@ -385,7 +496,7 @@ class UserRepository:
         return picked
 
     def create_feedback_event(self, payload: dict[str, Any]) -> dict | None:
-        client = SupabaseProvider.get_client()
+        client = DatabaseProvider.get_client()
         if client is None:
             return None
         try:
@@ -395,51 +506,94 @@ class UserRepository:
                 return None
             insert_payload = dict(payload)
             insert_payload["user_id"] = resolved_id
-            res = client.table("ai_feedback_events").insert(insert_payload).execute()
+            res = client.table("activity_logs").insert(
+                {
+                    "user_id": resolved_id,
+                    "action": "ai_feedback",
+                    "entity_type": "ai_message",
+                    "entity_id": payload.get("message_id") if self.is_uuid(payload.get("message_id")) else None,
+                    "metadata": insert_payload,
+                }
+            ).execute()
             rows = res.data or []
-            return rows[0] if rows else None
+            if not rows:
+                return None
+            return {"id": rows[0].get("id"), "created_at": rows[0].get("created_at"), **insert_payload}
         except Exception as exc:
             raise RuntimeError(f"create_feedback_event failed: {exc}") from exc
 
     def get_feedback_event(self, feedback_id: str) -> dict | None:
-        client = SupabaseProvider.get_client()
+        client = DatabaseProvider.get_client()
         if client is None:
             return None
         try:
             rows = (
-                client.table("ai_feedback_events")
+                client.table("activity_logs")
                 .select("*")
                 .eq("id", feedback_id)
+                .eq("action", "ai_feedback")
                 .limit(1)
                 .execute()
                 .data
                 or []
             )
-            return rows[0] if rows else None
+            if not rows:
+                return None
+            metadata = rows[0].get("metadata") or {}
+            return {"id": rows[0].get("id"), "created_at": rows[0].get("created_at"), **metadata}
         except Exception:
             return None
 
     def create_training_sample(self, payload: dict[str, Any]) -> dict | None:
-        client = SupabaseProvider.get_client()
+        client = DatabaseProvider.get_client()
         if client is None:
             return None
         try:
-            res = client.table("ai_training_samples").insert(payload).execute()
+            user_id = None
+            if payload.get("feedback_id"):
+                feedback = self.get_feedback_event(str(payload.get("feedback_id")))
+                user_id = feedback.get("user_id") if feedback else None
+            if not user_id:
+                user_id = payload.get("user_id")
+            if not user_id:
+                user_id = payload.get("reviewer_user_id")
+            if not user_id or not self.is_uuid(str(user_id)):
+                return None
+            sample_payload = dict(payload)
+            sample_payload.setdefault("status", "pending")
+            res = client.table("activity_logs").insert(
+                {
+                    "user_id": str(user_id),
+                    "action": "ai_training_sample",
+                    "entity_type": "ai_feedback",
+                    "entity_id": payload.get("feedback_id") if self.is_uuid(payload.get("feedback_id")) else None,
+                    "metadata": sample_payload,
+                }
+            ).execute()
             rows = res.data or []
-            return rows[0] if rows else None
+            if not rows:
+                return None
+            return self._activity_log_to_training_sample(rows[0])
         except Exception as exc:
             raise RuntimeError(f"create_training_sample failed: {exc}") from exc
 
     def list_training_samples(self, status: str | None = None, limit: int = 50) -> list[dict]:
-        client = SupabaseProvider.get_client()
+        client = DatabaseProvider.get_client()
         if client is None:
             return []
         try:
-            query = client.table("ai_training_samples").select("*").order("created_at", desc=True).limit(limit)
-            if status:
-                query = query.eq("status", status)
+            query = (
+                client.table("activity_logs")
+                .select("*")
+                .eq("action", "ai_training_sample")
+                .order("created_at", desc=True)
+                .limit(limit)
+            )
             res = query.execute()
-            return res.data or []
+            rows = [self._activity_log_to_training_sample(row) for row in (res.data or [])]
+            if status:
+                rows = [row for row in rows if row.get("status") == status]
+            return rows
         except Exception:
             return []
 
@@ -450,7 +604,7 @@ class UserRepository:
         reviewer_user_id: str | None = None,
         review_note: str | None = None,
     ) -> dict | None:
-        client = SupabaseProvider.get_client()
+        client = DatabaseProvider.get_client()
         if client is None:
             return None
         try:
@@ -460,46 +614,76 @@ class UserRepository:
             }
             if reviewer_user_id:
                 payload["reviewed_by"] = reviewer_user_id
-            client.table("ai_training_samples").update(payload).eq("id", sample_id).execute()
             rows = (
-                client.table("ai_training_samples")
+                client.table("activity_logs")
                 .select("*")
                 .eq("id", sample_id)
+                .eq("action", "ai_training_sample")
                 .limit(1)
                 .execute()
                 .data
                 or []
             )
-            return rows[0] if rows else None
+            if not rows:
+                return None
+            metadata = dict(rows[0].get("metadata") or {})
+            metadata.update(payload)
+            client.table("activity_logs").update({"metadata": metadata}).eq("id", sample_id).execute()
+            rows[0]["metadata"] = metadata
+            return self._activity_log_to_training_sample(rows[0])
         except Exception as exc:
             raise RuntimeError(f"review_training_sample failed: {exc}") from exc
 
     def list_unprocessed_feedback_events(self, limit: int = 200) -> list[dict]:
-        client = SupabaseProvider.get_client()
+        client = DatabaseProvider.get_client()
         if client is None:
             return []
         try:
             existing = (
-                client.table("ai_training_samples")
-                .select("feedback_id")
+                client.table("activity_logs")
+                .select("metadata")
+                .eq("action", "ai_training_sample")
                 .limit(5000)
                 .execute()
                 .data
                 or []
             )
-            used_ids = {str(x.get("feedback_id")) for x in existing if x.get("feedback_id")}
+            used_ids = {str((x.get("metadata") or {}).get("feedback_id")) for x in existing if (x.get("metadata") or {}).get("feedback_id")}
             events = (
-                client.table("ai_feedback_events")
+                client.table("activity_logs")
                 .select("*")
+                .eq("action", "ai_feedback")
                 .order("created_at", desc=False)
                 .limit(limit)
                 .execute()
                 .data
                 or []
             )
-            return [e for e in events if str(e.get("id")) not in used_ids]
+            normalized = [
+                {"id": e.get("id"), "created_at": e.get("created_at"), **(e.get("metadata") or {})}
+                for e in events
+            ]
+            return [e for e in normalized if str(e.get("id")) not in used_ids]
         except Exception:
             return []
+
+    @staticmethod
+    def _activity_log_to_training_sample(row: dict) -> dict:
+        metadata = dict(row.get("metadata") or {})
+        return {
+            "id": str(row.get("id")),
+            "feedback_id": metadata.get("feedback_id"),
+            "source": metadata.get("source", "user_feedback"),
+            "input_text": metadata.get("input_text", ""),
+            "context_json": metadata.get("context_json"),
+            "expected_output": metadata.get("expected_output", ""),
+            "labels": metadata.get("labels") or [],
+            "status": metadata.get("status", "pending"),
+            "reviewed_by": metadata.get("reviewed_by"),
+            "reviewed_at": metadata.get("reviewed_at"),
+            "created_at": row.get("created_at"),
+            "updated_at": None,
+        }
 
     def list_meal_candidates_by_constraints(
         self,
@@ -507,7 +691,7 @@ class UserRepository:
         max_total_time_min: int,
         max_items: int = 200,
     ) -> list[dict]:
-        client = SupabaseProvider.get_client()
+        client = DatabaseProvider.get_client()
         if client is None:
             return []
         pool: list[dict] = []
@@ -527,13 +711,13 @@ class UserRepository:
                     {
                         "id": row.get("id"),
                         "source": "recipe",
-                        "name": row.get("title") or row.get("name"),
-                        "calories_kcal": self._to_float(
-                            row.get("calories_kcal", row.get("calories_per_serving"))
+                "name": row.get("title"),
+                "calories_kcal": self._to_float(
+                            row.get("calories_kcal")
                         ),
-                        "estimated_price_vnd": row.get("estimated_price_vnd"),
-                        "prep_time_min": row.get("prep_time_min", row.get("prep_time_minutes")),
-                        "cook_time_min": row.get("cook_time_min", row.get("cook_time_minutes")),
+                "estimated_price_vnd": row.get("estimated_price_vnd"),
+                        "prep_time_min": row.get("prep_time_min"),
+                        "cook_time_min": row.get("cook_time_min"),
                     }
                 )
         except Exception:
@@ -553,7 +737,7 @@ class UserRepository:
                     {
                         "id": row.get("id"),
                         "source": "food",
-                        "name": row.get("name_vi") or row.get("name"),
+                    "name": row.get("name_vi") or row.get("name_en"),
                         "calories_kcal": self._to_float(row.get("calories_kcal")),
                         "estimated_price_vnd": row.get("estimated_price_vnd"),
                         "prep_time_min": 0,
@@ -567,23 +751,43 @@ class UserRepository:
     def insert_meal_plan_rows(self, rows: list[dict]) -> int:
         if not rows:
             return 0
-        client = SupabaseProvider.get_client()
+        client = DatabaseProvider.get_client()
         if client is None:
             return 0
+        plan_headers: dict[tuple[str, str], str] = {}
         count = 0
         for row in rows:
             try:
+                user_id = str(row.get("user_id"))
+                plan_date = str(row.get("plan_date"))
+                key = (user_id, plan_date)
+                header_id = plan_headers.get(key)
+                if not header_id:
+                    header = client.table("meal_plan_headers").insert(
+                        {
+                            "user_id": user_id,
+                            "title": f"Meal plan {plan_date}",
+                            "plan_type": "ai_7d_budget_time_calories",
+                            "start_date": plan_date,
+                            "end_date": plan_date,
+                            "target_calories": int(self._to_float(row.get("target_calories")) * 3),
+                            "generated_by": "ai",
+                            "is_active": True,
+                        }
+                    ).execute().data or []
+                    if not header:
+                        continue
+                    header_id = str(header[0]["id"])
+                    plan_headers[key] = header_id
                 payload = {
-                    "user_id": row.get("user_id"),
-                    "plan_date": row.get("plan_date"),
+                    "meal_plan_id": header_id,
                     "meal_type": row.get("meal_type"),
                     "target_calories": int(self._to_float(row.get("target_calories"))),
-                    "mode": "ai_7d_budget_time_calories",
-                    "food_name": row.get("food_name"),
+                    "planned_date": plan_date,
                     "food_id": row.get("food_id"),
                     "recipe_id": row.get("recipe_id"),
                 }
-                client.table("meal_plans").insert(payload).execute()
+                client.table("meal_plan_items").insert(payload).execute()
                 count += 1
             except Exception:
                 continue
