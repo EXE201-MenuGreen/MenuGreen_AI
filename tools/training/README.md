@@ -13,10 +13,16 @@ Train intent classifier và export ONNX trực tiếp cho runtime mới.
 cd D:\EXE\RAG_AI_MenuGreen
 
 # 1) Tạo/cập nhật dataset
-python -X utf8 tools\training\generate_dataset.py
+python -X utf8 tools\training\generate_dataset.py --target-total 300000
+
+# Muốn dataset lớn hơn nữa:
+# python -X utf8 tools\training\generate_dataset.py --target-total 1000000
 
 # 2) Train classifier
-python -X utf8 tools\training\train_intent_classifier.py
+python -X utf8 tools\training\train_intent_classifier.py --batch-size 16 --epochs 12 --grad-accumulation-steps 4
+
+# Nếu muốn train lâu hơn:
+# python -X utf8 tools\training\train_intent_classifier.py --batch-size 16 --epochs 20 --grad-accumulation-steps 8
 
 # 3) Export ONNX + verify + package
 python -X utf8 tools\training\export_onnx.py

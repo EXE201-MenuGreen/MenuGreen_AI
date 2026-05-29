@@ -54,11 +54,26 @@ CONFIG = {
 parser = argparse.ArgumentParser()
 parser.add_argument("--dataset", type=str, default=CONFIG["dataset_path"])
 parser.add_argument("--continue-from", dest="continue_from", type=str, default="")
+parser.add_argument("--batch-size", type=int, default=CONFIG["batch_size"])
+parser.add_argument("--epochs", type=int, default=CONFIG["num_epochs"])
+parser.add_argument("--learning-rate", type=float, default=CONFIG["learning_rate"])
+parser.add_argument("--warmup-ratio", type=float, default=CONFIG["warmup_ratio"])
+parser.add_argument("--weight-decay", type=float, default=CONFIG["weight_decay"])
+parser.add_argument("--max-length", type=int, default=CONFIG["max_length"])
+parser.add_argument("--seed", type=int, default=CONFIG["seed"])
+parser.add_argument("--grad-accumulation-steps", type=int, default=1)
 args = parser.parse_args()
 
 CONFIG["dataset_path"] = args.dataset
 if args.continue_from:
     CONFIG["model_name"] = args.continue_from
+CONFIG["batch_size"] = args.batch_size
+CONFIG["num_epochs"] = args.epochs
+CONFIG["learning_rate"] = args.learning_rate
+CONFIG["warmup_ratio"] = args.warmup_ratio
+CONFIG["weight_decay"] = args.weight_decay
+CONFIG["max_length"] = args.max_length
+CONFIG["seed"] = args.seed
 
 print("\nConfig:")
 for key, value in CONFIG.items():
@@ -143,6 +158,7 @@ training_args = TrainingArguments(
     num_train_epochs=CONFIG["num_epochs"],
     per_device_train_batch_size=CONFIG["batch_size"],
     per_device_eval_batch_size=CONFIG["batch_size"],
+    gradient_accumulation_steps=max(1, args.grad_accumulation_steps),
     warmup_ratio=CONFIG["warmup_ratio"],
     weight_decay=CONFIG["weight_decay"],
     learning_rate=CONFIG["learning_rate"],

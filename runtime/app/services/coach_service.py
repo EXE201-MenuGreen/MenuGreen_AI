@@ -157,12 +157,24 @@ class CoachService:
                 intent = heuristic_intent or "general"
             elif intent in ("unknown", ""):
                 intent = heuristic_intent or "general"
-            response_text = self._compose_contextual_response(intent, context, request.message)
+            response_text = self._compose_contextual_response(
+                intent,
+                context,
+                request.message,
+                request.conversation_history,
+                last_recommended_name,
+            )
             source = "onnx"
             confidence = round(score, 4)
         else:
             intent = self._heuristic_intent(request.message) or "general"
-            response_text = self._compose_contextual_response(intent, context, request.message)
+            response_text = self._compose_contextual_response(
+                intent,
+                context,
+                request.message,
+                request.conversation_history,
+                last_recommended_name,
+            )
             source = "fallback"
             confidence = None
 
@@ -201,7 +213,14 @@ class CoachService:
             subscription_tier=plan if plan in ("free", "saving", "energy", "performance") else "free",
         )
 
-    def _compose_contextual_response(self, intent: str, context: dict, message: str) -> str:
+    def _compose_contextual_response(
+        self,
+        intent: str,
+        context: dict,
+        message: str,
+        conversation_history=None,
+        last_recommended_name: str = "",
+    ) -> str:
         totals = context.get("today_totals", {})
         remaining = context.get("remaining_totals", {})
         targets = context.get("targets", {})
@@ -218,7 +237,7 @@ class CoachService:
 
         if intent == "recipe_search":
             query = self._extract_recipe_query(message)
-            if self._is_vague_food_request(message) and request.conversation_history:
+            if self._is_vague_food_request(message) and conversation_history:
                 query = last_recommended_name or query
             recipe_candidates = self.repo.search_recipes_by_name(query, limit=5)
             food_candidates = self.repo.search_foods_by_name(query, limit=5)
@@ -267,6 +286,13 @@ class CoachService:
                 "Bạn có thể bật pipeline search để mình trả kết quả có nguồn trích dẫn."
             )
 
+        if intent in ("general", "unknown"):
+            return (
+                "Xin lỗi, câu hỏi này nằm ngoài phạm vi hỗ trợ hiện tại của AI Coach. "
+                "Mình đang tập trung vào món ăn, dinh dưỡng, thực đơn và truy vấn công thức. "
+                "Bạn có thể hỏi lại theo hướng đó, hoặc đổi sang câu hỏi về calo, món ăn, hay kế hoạch bữa ăn."
+            )
+
         if intent == "meal_plan":
             remain_kcal = remaining.get("calories_kcal", 0)
             remain_protein = remaining.get("protein_g", 0)
@@ -301,9 +327,8 @@ class CoachService:
             )
 
         return (
-            f"Hôm nay bạn đã nạp khoảng {totals.get('calories_kcal', 0)} kcal, "
-            f"P/C/F = {totals.get('protein_g', 0)}/{totals.get('carbs_g', 0)}/{totals.get('fat_g', 0)}g. "
-            f"Nếu bạn muốn, tôi có thể tính phần còn lại theo mục tiêu hôm nay."
+            "Xin lỗi, câu hỏi này nằm ngoài phạm vi hỗ trợ hiện tại của AI Coach. "
+            "Mình đang tập trung vào món ăn, dinh dưỡng, thực đơn và truy vấn công thức."
         )
 
     @staticmethod

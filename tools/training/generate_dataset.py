@@ -11,6 +11,7 @@ import json
 import os
 import random
 import re
+import argparse
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -57,6 +58,15 @@ SEED_DATASET = {
         "Tìm món từ trứng và ức gà",
         "Công thức bữa sáng giàu protein",
         "Nên ăn gì sau tập gym buổi tối",
+        "Món khác",
+        "Đổi món",
+        "Có món khác không",
+        "Gợi ý món khác đi",
+        "Tôi muốn một món chính duy nhất",
+        "Chỉ cần 1 món chính thôi",
+        "Cho món ít đậu",
+        "Đổi sang món ít dầu hơn",
+        "Món này hơi nặng, cho món khác",
     ],
     "ai_search": [
         "Tìm giúp tôi thông tin mới nhất về chế độ ăn Địa Trung Hải",
@@ -195,6 +205,247 @@ SEED_DATASET = {
     ],
 }
 
+FOOD_NOUNS = [
+    "cơm tấm",
+    "phở bò",
+    "phở gà",
+    "bún bò huế",
+    "bún chả",
+    "bún riêu",
+    "bún thịt nướng",
+    "bánh mì",
+    "xôi gà",
+    "xôi mặn",
+    "cháo gà",
+    "cháo vịt",
+    "cháo yến mạch",
+    "trứng luộc",
+    "trứng ốp la",
+    "ức gà áp chảo",
+    "gà nướng",
+    "cá hồi áp chảo",
+    "cá hấp",
+    "đậu hũ sốt cà",
+    "rau luộc",
+    "salad ức gà",
+    "miến gà",
+    "hủ tiếu",
+    "mì xào",
+    "cơm gà",
+    "cơm chiên",
+    "bánh cuốn",
+    "gỏi cuốn",
+    "nem cuốn",
+    "canh chua",
+    "canh rau",
+    "súp bí đỏ",
+    "súp gà",
+    "cháo cá",
+    "chả cá",
+    "thịt bò xào",
+    "thịt heo kho",
+    "tôm rim",
+    "đậu phụ non",
+]
+
+KB_DISHES = [
+    "phở bò", "phở gà", "bún bò huế", "bún riêu", "hủ tiếu nam vang", "mì quảng", "bánh canh cua",
+    "bún mắm", "bún cá", "bún mọc", "bún thang", "cháo gà", "cháo lòng", "cơm tấm", "cơm gà",
+    "cơm chiên dương châu", "cơm bò lúc lắc", "cơm cá kho", "cơm thịt kho trứng", "cá kho tộ",
+    "thịt kho tàu", "cá basa kho tiêu", "gà kho gừng", "rau muống xào tỏi", "bò xào cần tây",
+    "mực xào chua ngọt", "tôm xào rau củ", "đậu hũ xào nấm", "gỏi cuốn", "bò bía", "chả giò",
+    "bánh mì thịt", "bánh xèo", "bánh khọt", "bánh cuốn", "bánh bèo", "bánh bột lọc",
+    "cao lầu", "cơm hến", "lẩu cá kèo", "bánh tằm bì", "bánh cống", "bánh đa cua",
+    "nem nướng nha trang", "bún chả",
+]
+
+RECIPES_MODIFIERS = [
+    "ít đậu",
+    "nhiều đạm",
+    "ít tinh bột",
+    "ít dầu",
+    "ít calo",
+    "giàu protein",
+    "nhanh",
+    "dễ nấu",
+    "ngon",
+    "dễ làm",
+    "rẻ",
+    "healthy",
+    "ăn kiêng",
+    "cho bữa trưa",
+    "cho bữa sáng",
+    "cho bữa tối",
+    "sau tập gym",
+    "đi làm mang theo",
+    "cho gia đình",
+    "cho người mới tập bếp",
+]
+
+RECIPES_VERBS = [
+    "công thức nấu",
+    "cách nấu",
+    "làm",
+    "tìm món",
+    "gợi ý món",
+    "món",
+    "mình muốn ăn",
+    "cho tôi món",
+    "chọn món",
+    "đổi sang món",
+]
+
+RECIPES_CONTEXTS = [
+    "bữa sáng",
+    "bữa trưa",
+    "bữa tối",
+    "bữa phụ",
+    "đi làm",
+    "ở nhà",
+    "mang đi",
+    "ăn nhẹ",
+    "ăn no",
+    "giảm cân",
+    "tăng cơ",
+    "tiết kiệm",
+    "nấu nhanh",
+    "ít dầu mỡ",
+    "ít tinh bột",
+]
+
+VAGUE_SWITCH_PHRASES = [
+    "món khác",
+    "đổi món",
+    "có món khác không",
+    "gợi ý món khác đi",
+    "cho món khác",
+    "đổi sang món khác",
+    "món này chưa ổn",
+    "thử món khác",
+    "món khác nữa",
+    "thêm lựa chọn khác",
+    "cho món khác đi",
+    "đổi sang món khác đi",
+    "gợi ý thêm món khác",
+    "thêm món khác cho tôi",
+    "có lựa chọn nào khác không",
+    "cho tôi lựa chọn khác",
+    "món khác kiểu nhẹ hơn",
+    "món khác kiểu no hơn",
+    "món khác ít dầu hơn",
+    "món khác nhiều đạm hơn",
+    "món khác ít tinh bột hơn",
+    "món khác rẻ hơn",
+    "món khác nhanh hơn",
+    "món khác dễ nấu hơn",
+    "đổi qua món khác",
+    "đổi sang món nhẹ hơn",
+    "đổi sang món no hơn",
+    "đổi sang món ít dầu hơn",
+    "đổi sang món nhiều đạm hơn",
+    "đổi sang món ít tinh bột hơn",
+    "đổi sang món rẻ hơn",
+    "đổi sang món nhanh hơn",
+    "đổi sang món dễ nấu hơn",
+    "không thích món này",
+    "món này không hợp",
+    "món này không ổn",
+    "món này chưa hợp lắm",
+    "món này hơi ngán",
+    "món này hơi nặng",
+    "món này hơi nhiều dầu",
+    "món này hơi nhiều tinh bột",
+    "món này hơi ít đạm",
+    "món này hơi đắt",
+    "món này hơi lâu",
+    "có món nào khác ngon hơn không",
+    "có món nào khác nhẹ hơn không",
+    "có món nào khác ít dầu hơn không",
+    "có món nào khác nhiều đạm hơn không",
+    "có món nào khác ít tinh bột hơn không",
+    "có món nào khác rẻ hơn không",
+    "có món nào khác nhanh hơn không",
+    "có món nào khác dễ nấu hơn không",
+]
+
+
+def build_recipe_search_seeds() -> list[str]:
+    seeds: list[str] = []
+    for noun in FOOD_NOUNS + KB_DISHES:
+        seeds.extend(
+            [
+                f"công thức nấu {noun}",
+                f"cách nấu {noun}",
+                f"tìm món {noun}",
+                f"gợi ý món {noun}",
+                f"mình muốn ăn {noun}",
+                f"cho tôi món {noun}",
+                f"{noun} có công thức không",
+            ]
+        )
+        for modifier in RECIPES_MODIFIERS:
+            seeds.extend(
+                [
+                    f"{noun} {modifier}",
+                    f"{noun} cho {modifier}",
+                    f"món {noun} {modifier}",
+                    f"công thức nấu {noun} {modifier}",
+                    f"cách làm {noun} {modifier}",
+                ]
+            )
+        for context in RECIPES_CONTEXTS:
+            seeds.extend(
+                [
+                    f"{noun} cho {context}",
+                    f"{noun} {context}",
+                    f"món {noun} cho {context}",
+                    f"gợi ý {noun} cho {context}",
+                ]
+            )
+        seeds.extend(
+            [
+                f"{noun} kiểu quán",
+                f"{noun} phiên bản gia đình",
+                f"{noun} bản nhanh",
+                f"{noun} bản healthy",
+                f"{noun} ít dầu",
+                f"{noun} nhiều đạm",
+                f"{noun} ít tinh bột",
+                f"{noun} cho bữa sáng",
+                f"{noun} cho bữa trưa",
+                f"{noun} cho bữa tối",
+            ]
+        )
+    for phrase in VAGUE_SWITCH_PHRASES:
+        seeds.extend(
+            [
+                phrase,
+                f"cho tôi {phrase}",
+                f"mình muốn {phrase}",
+                f"có {phrase} không",
+                f"tìm món khác",
+                f"đề xuất món khác",
+                f"đổi sang món khác",
+                f"gợi ý lựa chọn khác",
+                f"cho mình món khác",
+                f"món này không hợp, cho món khác",
+                f"món này hơi nặng, cho món khác",
+                f"món này hơi đắt, cho món khác",
+                f"món này hơi lâu, cho món khác",
+                f"món này hơi ít đạm, cho món khác",
+                f"món này hơi nhiều dầu, cho món khác",
+            ]
+        )
+    # De-duplicate while preserving order.
+    unique: list[str] = []
+    seen: set[str] = set()
+    for item in seeds:
+        normalized = normalize_text(item)
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            unique.append(normalized)
+    return unique
+
 PREFIXES = [
     "ban oi",
     "cho minh hoi",
@@ -316,6 +567,11 @@ def augment_one(base: str, rng: random.Random) -> str:
     if rng.random() < 0.25:
         t = typo_noise(t, rng)
 
+    if rng.random() < 0.22:
+        t = t.replace("món", rng.choice(["món", "món ăn", "dish"]))
+    if rng.random() < 0.18:
+        t = t.replace("công thức", rng.choice(["công thức", "recipe", "cách làm"]))
+
     t = normalize_text(t)
     return t
 
@@ -325,15 +581,17 @@ def build_balanced_samples(target_total: int, seed: int) -> list[dict]:
     samples: list[dict] = []
     per_label = target_total // len(LABEL_ORDER)
 
+    recipe_search_pool = build_recipe_search_seeds()
+
     for label in LABEL_ORDER:
-        seeds = SEED_DATASET[label]
+        seeds = recipe_search_pool if label == "recipe_search" else SEED_DATASET[label]
         bucket: set[str] = set()
         # include seed lines first
         for s in seeds:
             bucket.add(normalize_text(s))
 
         attempts = 0
-        while len(bucket) < per_label and attempts < per_label * 30:
+        while len(bucket) < per_label and attempts < per_label * 50:
             base = rng.choice(seeds)
             aug = augment_one(base, rng)
             if aug:
@@ -377,7 +635,7 @@ def stratified_split(samples: list[dict], val_ratio: float, seed: int):
     return train, val
 
 
-def generate_dataset(output_path: str | None = None, target_total: int = 10_000, seed: int = 42):
+def generate_dataset(output_path: str | None = None, target_total: int = 300_000, seed: int = 42):
     samples = build_balanced_samples(target_total=target_total, seed=seed)
     train, val = stratified_split(samples, val_ratio=0.2, seed=seed)
 
@@ -413,5 +671,10 @@ def generate_dataset(output_path: str | None = None, target_total: int = 10_000,
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Generate large intent dataset with augmentation.")
+    parser.add_argument("--output", type=str, default=None)
+    parser.add_argument("--target-total", type=int, default=300_000)
+    parser.add_argument("--seed", type=int, default=42)
+    args = parser.parse_args()
     os.makedirs(Path(__file__).resolve().parent, exist_ok=True)
-    generate_dataset(target_total=10_000, seed=42)
+    generate_dataset(output_path=args.output, target_total=args.target_total, seed=args.seed)
