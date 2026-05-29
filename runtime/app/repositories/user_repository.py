@@ -241,6 +241,42 @@ class UserRepository:
         except Exception:
             return []
 
+    def list_active_recipes(self, limit: int = 5) -> list[dict]:
+        client = DatabaseProvider.get_client()
+        if client is None:
+            return []
+        try:
+            rows = (
+                client.table(self.settings.recipes_table)
+                .select("*")
+                .eq("is_active", True)
+                .limit(limit)
+                .execute()
+                .data
+                or []
+            )
+            return [self._normalize_macro_row(r) for r in rows]
+        except Exception:
+            return []
+
+    def list_active_foods(self, limit: int = 5) -> list[dict]:
+        client = DatabaseProvider.get_client()
+        if client is None:
+            return []
+        try:
+            rows = (
+                client.table(self.settings.foods_table)
+                .select("*")
+                .eq("is_active", True)
+                .limit(limit)
+                .execute()
+                .data
+                or []
+            )
+            return [self._normalize_macro_row(r) for r in rows]
+        except Exception:
+            return []
+
     def search_foods_by_name(self, keyword: str, limit: int = 5) -> list[dict]:
         query = (keyword or "").strip()
         if not query:
@@ -409,6 +445,14 @@ class UserRepository:
         return {
             "id": row.get("id"),
             "name": row.get("title") or row.get("name_vi") or row.get("name_en") or row.get("name"),
+            "description": row.get("description"),
+            "instructions": row.get("instructions"),
+            "prep_time_min": row.get("prep_time_min"),
+            "cook_time_min": row.get("cook_time_min"),
+            "total_time_min": row.get("total_time_min"),
+            "difficulty": row.get("difficulty"),
+            "meal_type": row.get("meal_type"),
+            "estimated_price_vnd": row.get("estimated_price_vnd"),
             "calories_kcal": round(kcal, 1),
             "protein_g": round(protein, 1),
             "carbs_g": round(carbs, 1),

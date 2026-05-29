@@ -141,7 +141,8 @@ class CoachService:
             for row in recipes:
                 name = row.get("name", "unknown")
                 kcal = row.get("calories_kcal", "?")
-                suggestions.append(f"{name} ({kcal} kcal)")
+                detail = self._format_recipe_detail(row)
+                suggestions.append(f"{name} ({kcal} kcal{detail})")
             if not suggestions:
                 for row in foods:
                     name = row.get("name", "unknown")
@@ -161,6 +162,13 @@ class CoachService:
                     name = item.get("name", "unknown")
                     kcal = item.get("calories_kcal", "?")
                     suggestions.append(f"{name} ({kcal} kcal)")
+            if not suggestions:
+                for row in self.repo.list_active_recipes(limit=3) + self.repo.list_active_foods(limit=3):
+                    name = row.get("name", "unknown")
+                    kcal = row.get("calories_kcal", "?")
+                    suggestions.append(f"{name} ({kcal} kcal)")
+                    if len(suggestions) >= 3:
+                        break
             suggestion_text = ", ".join(suggestions) if suggestions else "trứng luộc + rau luộc (gợi ý mặc định)"
             return (
                 f"Theo từ khóa '{query}', mình gợi ý: {suggestion_text}. "
@@ -215,3 +223,19 @@ class CoachService:
             f"P/C/F = {totals.get('protein_g', 0)}/{totals.get('carbs_g', 0)}/{totals.get('fat_g', 0)}g. "
             f"Nếu bạn muốn, tôi có thể tính phần còn lại theo mục tiêu hôm nay."
         )
+
+    @staticmethod
+    def _format_recipe_detail(row: dict) -> str:
+        details: list[str] = []
+        total_time = row.get("total_time_min")
+        if total_time:
+            details.append(f"{total_time} phút")
+        price = row.get("estimated_price_vnd")
+        if price:
+            details.append(f"~{price:,}đ".replace(",", "."))
+        instructions = row.get("instructions")
+        if isinstance(instructions, list) and instructions:
+            steps = " → ".join(str(x).strip() for x in instructions[:3] if str(x).strip())
+            if steps:
+                details.append(f"cách làm: {steps}")
+        return ", " + ", ".join(details) if details else ""

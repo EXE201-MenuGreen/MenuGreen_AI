@@ -15,10 +15,13 @@ class DatabaseProvider:
             return cls._client
 
         settings = get_settings()
-        if not settings.postgres_url:
+        postgres_url = settings.postgres_url.strip()
+        if postgres_url.startswith("POSTGRES_URL="):
+            postgres_url = postgres_url.split("=", 1)[1].strip()
+        if not postgres_url:
             return None
 
-        cls._client = PostgresProvider(settings.postgres_url)
+        cls._client = PostgresProvider(postgres_url)
         return cls._client
 
 
