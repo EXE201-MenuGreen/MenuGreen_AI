@@ -82,6 +82,63 @@ class CoachService:
         cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,.-\t")
         return cleaned or text
 
+    @staticmethod
+    def _is_vague_food_request(message: str) -> bool:
+        text = (message or "").strip().lower()
+        if not text:
+            return True
+        vague_phrases = {
+            "món khác",
+            "mon khac",
+            "khác",
+            "khac",
+            "món khác nữa",
+            "mon khac nua",
+            "đổi món",
+            "doi mon",
+            "gợi ý khác",
+            "goi y khac",
+            "món khác đi",
+            "mon khac di",
+        }
+        return text in vague_phrases or len(text.split()) <= 2
+
+    @staticmethod
+    def _extract_last_recommended_name(conversation_history) -> str:
+        if not conversation_history:
+            return ""
+        pattern = re.compile(r"(?:gợi ý|goi y|mình gợi ý|theo món)\s+['\"]?([^'\".]+?)['\"]?(?:\s*\(|,|\.|$)", re.IGNORECASE)
+        for item in reversed(conversation_history):
+            role = getattr(item, "role", None) if not isinstance(item, dict) else item.get("role")
+            content = getattr(item, "content", "") if not isinstance(item, dict) else item.get("content", "")
+            if role != "assistant":
+                continue
+            match = pattern.search(content or "")
+            if match:
+                return match.group(1).strip()
+        return ""
+
+    @staticmethod
+    def _score_recipe_row(row: dict, query: str, exclude_name: str = "") -> tuple[int, float, int]:
+        name = str(row.get("name", "")).lower()
+        query_text = (query or "").lower().strip()
+        similarity = float(row.get("similarity", 0) or 0)
+        exact_match = 0 if query_text and query_text == name else 1
+        variant_penalty = 1 if any(
+            token in name
+            for token in [
+                "ít đậu",
+                "nhiều đạm",
+                "ít tinh bột",
+                "ít dầu",
+                "healthy",
+                "giảm cân",
+                "protein",
+            ]
+        ) else 0
+        exclude_penalty = 1 if exclude_name and exclude_name.lower() in name else 0
+        return (exact_match + variant_penalty + exclude_penalty, -similarity, len(name))
+
     async def reply(self, request: ChatRequest) -> ChatResponse:
         request_id = request.request_id or str(uuid.uuid4())
         thread_id = request.thread_id or request.user_id or request_id
@@ -90,6 +147,7 @@ class CoachService:
         plan = self.repo.get_subscription_plan(request.user_id) if request.user_id else "free"
         logs_7d = self.repo.get_meal_logs_7d(request.user_id) if request.user_id else []
         context = build_context_snapshot(profile, logs_7d)
+        last_recommended_name = self._extract_last_recommended_name(request.conversation_history)
 
         if self.classifier is not None:
             intent, score = self.classifier.predict(request.message)
@@ -160,20 +218,17 @@ class CoachService:
 
         if intent == "recipe_search":
             query = self._extract_recipe_query(message)
-            recipes = self.repo.search_recipes_by_name(query, limit=3)
-            foods = self.repo.search_foods_by_name(query, limit=3)
-            suggestions: list[str] = []
-            for row in recipes:
-                name = row.get("name", "unknown")
-                kcal = row.get("calories_kcal", "?")
-                detail = self._format_recipe_detail(row)
-                suggestions.append(f"{name} ({kcal} kcal{detail})")
-            if not suggestions:
-                for row in foods:
-                    name = row.get("name", "unknown")
-                    kcal = row.get("calories_kcal", "?")
-                    suggestions.append(f"{name} ({kcal} kcal)")
-            if not suggestions:
+            if self._is_vague_food_request(message) and request.conversation_history:
+                query = last_recommended_name or query
+            recipe_candidates = self.repo.search_recipes_by_name(query, limit=5)
+            food_candidates = self.repo.search_foods_by_name(query, limit=5)
+            best_item = None
+
+            if recipe_candidates:
+                best_item = sorted(recipe_candidates, key=lambda row: self._score_recipe_row(row, query, last_recommended_name))[0]
+            elif food_candidates:
+                best_item = sorted(food_candidates, key=lambda row: self._score_recipe_row(row, query, last_recommended_name))[0]
+            if not best_item:
                 # Fallback: always provide at least one practical recommendation
                 # from current DB pool so the user never gets an empty answer.
                 fallback_items = self.repo.suggest_meal_plan_items(
@@ -183,21 +238,22 @@ class CoachService:
                     remaining_fat=float(remaining.get("fat_g", 0) or 0),
                     limit=1,
                 )
-                for item in fallback_items:
-                    name = item.get("name", "unknown")
-                    kcal = item.get("calories_kcal", "?")
-                    suggestions.append(f"{name} ({kcal} kcal)")
-            if not suggestions:
-                for row in self.repo.list_active_recipes(limit=3) + self.repo.list_active_foods(limit=3):
-                    name = row.get("name", "unknown")
-                    kcal = row.get("calories_kcal", "?")
-                    suggestions.append(f"{name} ({kcal} kcal)")
-                    if len(suggestions) >= 3:
-                        break
-            suggestion_text = ", ".join(suggestions) if suggestions else "trứng luộc + rau luộc (gợi ý mặc định)"
+                best_item = fallback_items[0] if fallback_items else None
+            if not best_item:
+                active_pool = self.repo.list_active_recipes(limit=5) + self.repo.list_active_foods(limit=5)
+                if active_pool:
+                    best_item = sorted(active_pool, key=lambda row: self._score_recipe_row(row, query, last_recommended_name))[0]
+
+            if best_item:
+                name = best_item.get("name", "unknown")
+                kcal = best_item.get("calories_kcal", "?")
+                detail = self._format_recipe_detail(best_item) if best_item.get("instructions") else ""
+                suggestion_text = f"{name} ({kcal} kcal{detail})"
+            else:
+                suggestion_text = "trứng luộc + rau luộc (gợi ý mặc định)"
             display_query = query if query else (message or "").strip()
             return (
-                f"Theo món '{display_query}', mình gợi ý: {suggestion_text}. "
+                f"Theo món '{display_query}', mình gợi ý 1 món chính: {suggestion_text}. "
                 f"Hôm nay bạn đang ở mức {totals.get('calories_kcal', 0)} kcal "
                 f"và còn {remaining.get('calories_kcal', 0)} kcal cho ngày hôm nay."
             )
