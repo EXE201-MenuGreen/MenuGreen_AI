@@ -6,6 +6,9 @@ import uuid
 from typing import Any
 from datetime import datetime, timezone
 
+import psycopg
+from psycopg.rows import dict_row
+
 from app.core.config import get_settings
 from app.core.database_provider import DatabaseProvider
 
@@ -226,18 +229,81 @@ class UserRepository:
         query = (keyword or "").strip()
         if not query:
             return []
+        semantic_rows = self.search_recipes_by_embedding(query, limit=limit)
+        if semantic_rows:
+            return semantic_rows
         client = DatabaseProvider.get_client()
         if client is None:
             return []
         try:
-            res = (
-                client.table(self.settings.recipes_table)
-                .select("*")
-                .ilike("title", f"%{query}%")
-                .limit(limit)
-                .execute()
+            fields = ("title", "name", "description", "slug")
+            rows: list[dict] = []
+            seen_ids: set[str] = set()
+            for field in fields:
+                res = (
+                    client.table(self.settings.recipes_table)
+                    .select("*")
+                    .ilike(field, f"%{query}%")
+                    .limit(limit)
+                    .execute()
+                )
+                for row in res.data or []:
+                    row_id = str(row.get("id") or "")
+                    if row_id and row_id in seen_ids:
+                        continue
+                    if row_id:
+                        seen_ids.add(row_id)
+                    rows.append(row)
+                    if len(rows) >= limit:
+                        break
+                if len(rows) >= limit:
+                    break
+            return [self._normalize_macro_row(r) for r in rows]
+        except Exception:
+            return []
+
+    def search_recipes_by_embedding(self, query_text: str, limit: int = 5) -> list[dict]:
+        query = (query_text or "").strip()
+        if not query:
+            return []
+        client = DatabaseProvider.get_client()
+        if client is None or not getattr(client, "connection_string", ""):
+            return []
+
+        settings = get_settings()
+        embedding_model = getattr(settings, "embedding_model", "") or ""
+        try:
+            from google import generativeai as genai
+        except Exception:
+            return []
+
+        try:
+            if settings.google_api_key:
+                genai.configure(api_key=settings.google_api_key)
+            embedding = genai.embed_content(
+                model=embedding_model,
+                content=query,
+                task_type="retrieval_query",
             )
-            return [self._normalize_macro_row(r) for r in (res.data or [])]
+            values = embedding.get("embedding", {}).get("values") if isinstance(embedding, dict) else None
+            if not values:
+                return []
+        except Exception:
+            return []
+
+        try:
+            vector_literal = "[" + ",".join(f"{float(value):.8f}" for value in values) + "]"
+            with psycopg.connect(client.connection_string, row_factory=dict_row) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT id, name, description, prep_time_minutes, cook_time_minutes, servings, dietary_tags, similarity
+                        FROM match_recipes(%s::vector, %s, %s)
+                        """,
+                        [vector_literal, 0.35, limit],
+                    )
+                    rows = cur.fetchall() or []
+            return [self._normalize_macro_row(row) | {"similarity": float(row.get("similarity", 0) or 0)} for row in rows]
         except Exception:
             return []
 
@@ -285,25 +351,27 @@ class UserRepository:
         if client is None:
             return []
         try:
-            res = (
-                client.table(self.settings.foods_table)
-                .select("*")
-                .ilike("name_vi", f"%{query}%")
-                .limit(limit)
-                .execute()
-            )
-            rows = res.data or []
-            if len(rows) < limit:
-                more = (
+            rows: list[dict] = []
+            seen_ids: set[str] = set()
+            for field in ("name_vi", "name_en", "name", "slug", "description"):
+                res = (
                     client.table(self.settings.foods_table)
                     .select("*")
-                    .ilike("name_en", f"%{query}%")
-                    .limit(limit - len(rows))
+                    .ilike(field, f"%{query}%")
+                    .limit(limit)
                     .execute()
-                    .data
-                    or []
                 )
-                rows.extend(more)
+                for row in res.data or []:
+                    row_id = str(row.get("id") or "")
+                    if row_id and row_id in seen_ids:
+                        continue
+                    if row_id:
+                        seen_ids.add(row_id)
+                    rows.append(row)
+                    if len(rows) >= limit:
+                        break
+                if len(rows) >= limit:
+                    break
             return [self._normalize_macro_row(r) for r in rows]
         except Exception:
             return []

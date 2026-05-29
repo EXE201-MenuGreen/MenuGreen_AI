@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import re
 import uuid
 from pathlib import Path
 
@@ -56,6 +57,30 @@ class CoachService:
         if any(k in text for k in recipe_keywords):
             return "recipe_search"
         return None
+
+    @staticmethod
+    def _extract_recipe_query(message: str) -> str:
+        text = (message or "").strip()
+        if not text:
+            return ""
+
+        cleaned = text
+        prefixes = [
+            r"^(công thức|cong thuc|cách nấu|cach nau|làm|lam|nấu|nau)\s+",
+            r"^(tìm|tim|gợi ý|goi y|tra cứu|tra cuu)\s+(món|mon|công thức|cong thuc|recipe)\s+",
+            r"^(gợi ý|goi y|tìm|tim)\s+",
+        ]
+        for pattern in prefixes:
+            cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE).strip()
+
+        cleaned = re.sub(
+            r"\b(công thức|cong thuc|cách nấu|cach nau|recipe|món|mon|nấu|nau|làm|lam|tìm|tim|gợi ý|goi y|cho|của|cua|về|ve)\b",
+            " ",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,.-\t")
+        return cleaned or text
 
     async def reply(self, request: ChatRequest) -> ChatResponse:
         request_id = request.request_id or str(uuid.uuid4())
@@ -134,7 +159,7 @@ class CoachService:
             )
 
         if intent == "recipe_search":
-            query = (message or "").strip()
+            query = self._extract_recipe_query(message)
             recipes = self.repo.search_recipes_by_name(query, limit=3)
             foods = self.repo.search_foods_by_name(query, limit=3)
             suggestions: list[str] = []
@@ -170,8 +195,9 @@ class CoachService:
                     if len(suggestions) >= 3:
                         break
             suggestion_text = ", ".join(suggestions) if suggestions else "trứng luộc + rau luộc (gợi ý mặc định)"
+            display_query = query if query else (message or "").strip()
             return (
-                f"Theo từ khóa '{query}', mình gợi ý: {suggestion_text}. "
+                f"Theo món '{display_query}', mình gợi ý: {suggestion_text}. "
                 f"Hôm nay bạn đang ở mức {totals.get('calories_kcal', 0)} kcal "
                 f"và còn {remaining.get('calories_kcal', 0)} kcal cho ngày hôm nay."
             )
