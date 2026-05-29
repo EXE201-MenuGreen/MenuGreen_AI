@@ -10,6 +10,8 @@ Adapters:
 - `viet_food_crawler_adapter.py` (chuan hoa du lieu crawler mon Viet)
 - `ingest_crawler_normalized.py` (import normalized crawler vao PostgreSQL)
 - `ingest_viecomrec_adapter.py` (pattern mapper interaction dataset)
+- `seed_large_postgres_dataset.py` (tao dataset lon foods/recipes/recipe_ingredients)
+- `seed_vietnamese_kb_dataset.py` (KB mon Viet that + bien the realistic)
 
 ## Chuan bi
 1. Dam bao da tao DB bang `infra/sql/database_setup.sql`.
@@ -32,6 +34,26 @@ python tools\data_pipeline\viet_food_crawler_adapter.py --input data\crawler_raw
 # 2) Import normalized JSON -> PostgreSQL tables
 python tools\data_pipeline\ingest_crawler_normalized.py --input data\crawler_normalized.json
 ```
+
+## Tao dataset lon cho recommend
+```powershell
+cd D:\EXE\RAG_AI_MenuGreen
+.\.venv\Scripts\Activate.ps1
+
+# Cach 1: generator to hop protein/carb/rau/cach nau
+python tools\data_pipeline\seed_large_postgres_dataset.py --count 1000
+
+# Full 100.000 mon + 100.000 cong thuc + 300.000 recipe_ingredients
+python tools\data_pipeline\seed_large_postgres_dataset.py --count 100000 --batch-size 1000
+
+# Cach 2 khuyen nghi: KB mon Viet that + bien the realistic
+python tools\data_pipeline\seed_vietnamese_kb_dataset.py --count 50000 --batch-size 1000
+
+# Neu muon export JSON de dung cho train/eval pipeline sau
+python tools\data_pipeline\seed_vietnamese_kb_dataset.py --count 50000 --export runtime\data\vietnamese_food_kb_50k.json
+```
+
+Script doc `POSTGRES_URL` tu `.env`, tao du lieu deterministic va co the chay lai nhieu lan.
 
 ## Interaction adapter (pattern tu external repo)
 ```powershell

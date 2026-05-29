@@ -1,5 +1,8 @@
 from fastapi import APIRouter, HTTPException
+import psycopg
+from psycopg.rows import dict_row
 
+from app.core.config import get_settings
 from app.schemas.chat import (
     ChatRequest,
     ChatResponse,
@@ -34,6 +37,70 @@ meal_plan_service = MealPlanService()
 @router.get("/health")
 def health() -> dict:
     return {"status": "ok", "service": "runtime"}
+
+
+@router.get("/debug/db")
+def debug_db(user_id: str = "11111111-1111-1111-1111-111111111111") -> dict:
+    profile = user_repo.get_profile(user_id)
+    logs = user_repo.get_meal_logs_7d(user_id)
+    recipes = user_repo.list_active_recipes(limit=5)
+    foods = user_repo.list_active_foods(limit=5)
+    return {
+        "user_id": user_id,
+        "profile_found": profile is not None,
+        "target_calories": (profile or {}).get("target_calories"),
+        "meal_logs_count": len(logs),
+        "recipes": recipes,
+        "foods": foods,
+    }
+
+
+@router.get("/debug/postgres")
+def debug_postgres(user_id: str = "11111111-1111-1111-1111-111111111111") -> dict:
+    settings = get_settings()
+    postgres_url = settings.postgres_url.strip()
+    if postgres_url.startswith("POSTGRES_URL="):
+        postgres_url = postgres_url.split("=", 1)[1].strip()
+    safe_url = postgres_url
+    if "@" in safe_url and ":" in safe_url.split("@", 1)[0]:
+        prefix, suffix = safe_url.split("@", 1)
+        safe_url = prefix.split(":", 2)[0] + ":***@" + suffix
+    try:
+        with psycopg.connect(postgres_url, row_factory=dict_row) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT current_database() AS database, current_user AS user, inet_server_port() AS port")
+                info = dict(cur.fetchone() or {})
+                counts = {}
+                for table in ["users", "profiles", "health_profiles", "meal_logs", "foods", "recipes"]:
+                    cur.execute(f'SELECT COUNT(*) AS count FROM "{table}"')
+                    counts[table] = cur.fetchone()["count"]
+                cur.execute(
+                    """
+                    SELECT
+                      hp.target_calories,
+                      hp.goal,
+                      COUNT(ml.id) AS meal_logs_count
+                    FROM health_profiles hp
+                    LEFT JOIN meal_logs ml ON ml.user_id = hp.user_id
+                    WHERE hp.user_id = %s
+                    GROUP BY hp.target_calories, hp.goal
+                    """,
+                    [user_id],
+                )
+                seeded_user = cur.fetchone()
+        return {
+            "ok": True,
+            "postgres_url": safe_url,
+            "connection": info,
+            "table_counts": counts,
+            "seeded_user": dict(seeded_user) if seeded_user else None,
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "postgres_url": safe_url,
+            "error": str(exc),
+        }
 
 
 @router.post("/worker/chat", response_model=ChatResponse)
