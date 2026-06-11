@@ -13,7 +13,28 @@ Cron is set to `*/2 * * * *` (every 2 minutes) in code.
 cd D:\EXE\RAG_AI_MenuGreen\tools\sync-service-nest
 copy .env.example .env
 npm install
+npm run build
 npm run start:dev
+```
+
+## Install Notes
+
+Expected local requirements:
+- Node.js `20+`
+- npm
+- Access to both source BE database and target AI PostgreSQL
+
+Important Git note:
+- Commit `package-lock.json`
+- Do not commit `node_modules/`
+- Do not commit `dist/`
+
+After clone, each teammate should run:
+
+```powershell
+cd D:\EXE\RAG_AI_MenuGreen\tools\sync-service-nest
+npm install
+npm run build
 ```
 
 ## Endpoints

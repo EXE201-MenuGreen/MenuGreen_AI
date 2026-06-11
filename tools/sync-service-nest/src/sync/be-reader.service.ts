@@ -28,7 +28,9 @@ export class BeReaderService implements OnModuleDestroy {
     if (!cfg.cursorColumn) {
       throw new Error(`Table ${cfg.table} missing cursorColumn for incremental mode`);
     }
-    const sql = `SELECT * FROM ${cfg.table} WHERE ${cfg.cursorColumn} > $1 ORDER BY ${cfg.cursorColumn} ASC LIMIT $2`;
+    const table = quoteIdent(cfg.table);
+    const cursorColumn = quoteIdent(cfg.cursorColumn);
+    const sql = `SELECT * FROM ${table} WHERE ${cursorColumn} > $1 ORDER BY ${cursorColumn} ASC LIMIT $2`;
     const params = [cursor ?? "1970-01-01T00:00:00Z", batchSize];
     const res = await this.pool.query(sql, params);
     return res.rows;
@@ -39,7 +41,7 @@ export class BeReaderService implements OnModuleDestroy {
     batchSize: number,
     offset: number,
   ): Promise<Record<string, unknown>[]> {
-    const sql = `SELECT * FROM ${cfg.table} ORDER BY 1 LIMIT $1 OFFSET $2`;
+    const sql = `SELECT * FROM ${quoteIdent(cfg.table)} ORDER BY 1 LIMIT $1 OFFSET $2`;
     const res = await this.pool.query(sql, [batchSize, offset]);
     return res.rows;
   }
@@ -48,4 +50,11 @@ export class BeReaderService implements OnModuleDestroy {
     await this.pool.query("SELECT 1");
     this.logger.log("Connected to BE database");
   }
+}
+
+function quoteIdent(value: string): string {
+  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(value)) {
+    throw new Error(`Unsafe SQL identifier: ${value}`);
+  }
+  return `"${value}"`;
 }

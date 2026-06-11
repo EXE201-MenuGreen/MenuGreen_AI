@@ -85,14 +85,20 @@ class UserRepository:
                 client.table(self.settings.subscriptions_table)
                 .select("*")
                 .eq("user_id", resolved_id)
-                .eq("status", "active")
-                .limit(1)
+                .limit(10)
                 .execute()
             )
             data = res.data or []
             if not data:
                 return "free"
-            row = data[0]
+            row = next(
+                (
+                    item
+                    for item in data
+                    if str(item.get("status") or "").strip().lower() == "active"
+                ),
+                data[0],
+            )
             plan_id = row.get("plan_id")
             if not plan_id:
                 return "free"
@@ -236,7 +242,7 @@ class UserRepository:
         if client is None:
             return []
         try:
-            fields = ("title", "name", "description", "slug")
+            fields = ("title", "description", "meal_type", "difficulty")
             rows: list[dict] = []
             seen_ids: set[str] = set()
             for field in fields:
@@ -258,6 +264,7 @@ class UserRepository:
                         break
                 if len(rows) >= limit:
                     break
+            rows = self._hydrate_recipe_rows(rows)
             return [self._normalize_macro_row(r) for r in rows]
         except Exception:
             return []
@@ -297,12 +304,13 @@ class UserRepository:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
-                        SELECT id, name, description, prep_time_minutes, cook_time_minutes, servings, dietary_tags, similarity
+                        SELECT *
                         FROM match_recipes(%s::vector, %s, %s)
                         """,
                         [vector_literal, 0.35, limit],
                     )
-                    rows = cur.fetchall() or []
+                    rows = [dict(row) for row in (cur.fetchall() or [])]
+            rows = self._hydrate_recipe_rows(rows)
             return [self._normalize_macro_row(row) | {"similarity": float(row.get("similarity", 0) or 0)} for row in rows]
         except Exception:
             return []
@@ -321,6 +329,7 @@ class UserRepository:
                 .data
                 or []
             )
+            rows = self._hydrate_recipe_rows(rows)
             return [self._normalize_macro_row(r) for r in rows]
         except Exception:
             return []
@@ -353,7 +362,7 @@ class UserRepository:
         try:
             rows: list[dict] = []
             seen_ids: set[str] = set()
-            for field in ("name_vi", "name_en", "name", "slug", "description"):
+            for field in ("name_vi", "name_en", "description", "category"):
                 res = (
                     client.table(self.settings.foods_table)
                     .select("*")
@@ -412,7 +421,7 @@ class UserRepository:
             return None
 
         try:
-            return None
+            return self._ensure_external_user(raw, client)
         except Exception:
             return None
 
@@ -420,10 +429,8 @@ class UserRepository:
         user_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"menugreen-user:{external_user_id}"))
         try:
             existing = client.table("users").select("id").eq("id", user_id).limit(1).execute().data or []
-            if existing:
-                return user_id
 
-            role_rows = client.table("roles").select("id").eq("name", "user").limit(1).execute().data or []
+            role_rows = client.table("roles").select("id").ilike("name", "user").limit(1).execute().data or []
             if role_rows:
                 role_id = str(role_rows[0]["id"])
             else:
@@ -431,8 +438,21 @@ class UserRepository:
                 client.table("roles").insert(
                     {
                         "id": role_id,
-                        "name": "user",
+                        "name": "User",
                         "description": "Default application user",
+                    }
+                ).execute()
+
+            if not existing:
+                email_local = re.sub(r"[^a-zA-Z0-9._-]+", "-", external_user_id).strip("-._")[:48] or "external"
+                client.table("users").insert(
+                    {
+                        "id": user_id,
+                        "role_id": role_id,
+                        "email": f"{email_local}@local.menugreen",
+                        "password_hash": "external-user",
+                        "email_confirmed": True,
+                        "is_active": True,
                     }
                 ).execute()
 
@@ -461,31 +481,18 @@ class UserRepository:
                 ).execute()
 
             ai_profile_rows = (
-                client.table("user_ai_profiles").select("user_id").eq("user_id", user_id).limit(1).execute().data or []
+                client.table("user_ai_profile").select("user_id").eq("user_id", user_id).limit(1).execute().data or []
             )
             if not ai_profile_rows:
-                client.table("user_ai_profiles").insert(
+                client.table("user_ai_profile").insert(
                     {
                         "user_id": user_id,
                         "preferences": {},
                         "disliked_foods": [],
                         "eating_pattern": {},
-                        "favorite_cuisines": [],
-                        "calorie_preference": {},
                     }
                 ).execute()
 
-            email_local = re.sub(r"[^a-zA-Z0-9._-]+", "-", external_user_id).strip("-._")[:48] or "external"
-            client.table("users").insert(
-                {
-                    "id": user_id,
-                    "role_id": role_id,
-                    "email": f"{email_local}@local.menugreen",
-                    "password_hash": "external-user",
-                    "email_confirmed": True,
-                    "is_active": True,
-                }
-            ).execute()
             return user_id
         except Exception:
             return None
@@ -496,6 +503,47 @@ class UserRepository:
             return float(value or 0)
         except Exception:
             return 0.0
+
+    def _hydrate_recipe_rows(self, rows: list[dict]) -> list[dict]:
+        if not rows:
+            return rows
+        client = DatabaseProvider.get_client()
+        if client is None:
+            return rows
+
+        food_ids = {
+            str(row.get("food_id"))
+            for row in rows
+            if row.get("food_id")
+        }
+        if not food_ids:
+            return rows
+
+        try:
+            linked_foods = (
+                client.table(self.settings.foods_table)
+                .select("*")
+                .in_("id", list(food_ids))
+                .execute()
+                .data
+                or []
+            )
+        except Exception:
+            return rows
+
+        food_map = {str(food.get("id")): food for food in linked_foods if food.get("id")}
+        hydrated: list[dict] = []
+        for row in rows:
+            linked_food = food_map.get(str(row.get("food_id") or ""))
+            if not linked_food:
+                hydrated.append(row)
+                continue
+            merged = dict(row)
+            for field in ("calories_kcal", "protein_g", "carbs_g", "fat_g", "estimated_price_vnd"):
+                if merged.get(field) in (None, 0, 0.0, ""):
+                    merged[field] = linked_food.get(field)
+            hydrated.append(merged)
+        return hydrated
 
     def _normalize_macro_row(self, row: dict) -> dict:
         kcal = self._to_float(
@@ -551,6 +599,7 @@ class UserRepository:
                 .data
                 or []
             )
+            recipes = self._hydrate_recipe_rows(recipes)
         except Exception:
             recipes = []
 
@@ -818,6 +867,7 @@ class UserRepository:
                 .data
                 or []
             )
+            recipes = self._hydrate_recipe_rows(recipes)
             for row in recipes:
                 pool.append(
                     {

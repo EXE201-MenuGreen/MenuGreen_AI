@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     google_api_key: str = ""
     llm_model: str = "gemini-2.5-flash"
     embedding_model: str = "models/gemini-embedding-001"
+    gemini_query_rewrite_enabled: bool = True
+    gemini_response_fallback_enabled: bool = True
 
     # Optional crawler/discovery knobs
     jina_api_key: str = ""

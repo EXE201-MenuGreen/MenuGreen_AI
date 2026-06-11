@@ -77,13 +77,13 @@ def debug_postgres(user_id: str = "11111111-1111-1111-1111-111111111111") -> dic
                 cur.execute(
                     """
                     SELECT
-                      hp.target_calories,
-                      hp.goal,
-                      COUNT(ml.id) AS meal_logs_count
+                      hp."TargetCalories" AS target_calories,
+                      hp."Goal" AS goal,
+                      COUNT(ml."Id") AS meal_logs_count
                     FROM health_profiles hp
-                    LEFT JOIN meal_logs ml ON ml.user_id = hp.user_id
-                    WHERE hp.user_id = %s
-                    GROUP BY hp.target_calories, hp.goal
+                    LEFT JOIN meal_logs ml ON ml."UserId" = hp."UserId"
+                    WHERE hp."UserId" = %s
+                    GROUP BY hp."TargetCalories", hp."Goal"
                     """,
                     [user_id],
                 )

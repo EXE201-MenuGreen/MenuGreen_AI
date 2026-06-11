@@ -31,6 +31,48 @@ pip install -r requirements-runtime.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
+## Setup For Teammates
+Recommended local prerequisites:
+- Python `3.11+` for runtime work
+- Node.js `20+` for `tools/sync-service-nest`
+- PostgreSQL connection string for the runtime DB
+- Gemini API key if you want hybrid rewrite/fallback enabled
+
+Runtime setup from a clean clone:
+```powershell
+cd D:\EXE\RAG_AI_MenuGreen\runtime
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements-runtime.txt
+```
+
+Minimal runtime `.env`:
+```env
+POSTGRES_URL=postgresql://username:password@host:5432/dbname
+GOOGLE_API_KEY=your_gemini_api_key
+```
+
+Run the runtime:
+```powershell
+cd D:\EXE\RAG_AI_MenuGreen\runtime
+.\.venv\Scripts\Activate.ps1
+uvicorn app.main:app --reload --port 8000
+```
+
+Sync service setup:
+```powershell
+cd D:\EXE\RAG_AI_MenuGreen\tools\sync-service-nest
+copy .env.example .env
+npm install
+npm run build
+npm run start:dev
+```
+
+Repository hygiene:
+- Commit `package-lock.json` files.
+- Do not commit `.venv`, `.venv311`, `node_modules`, or `dist`.
+- These local/build folders are already covered by `.gitignore`.
+
 ## Demo User Seed (PostgreSQL)
 - Runtime connects with `POSTGRES_URL`.
 - Runtime can auto-create a local PostgreSQL demo user for non-UUID IDs.
