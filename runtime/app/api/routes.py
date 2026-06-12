@@ -57,6 +57,15 @@ def debug_db(user_id: str = "11111111-1111-1111-1111-111111111111") -> dict:
 
 @router.get("/debug/postgres")
 def debug_postgres(user_id: str = "11111111-1111-1111-1111-111111111111") -> dict:
+    def quote_ident(name: str) -> str:
+        return '"' + str(name).replace('"', '""') + '"'
+
+    def first_existing(columns: set[str], *candidates: str) -> str | None:
+        for candidate in candidates:
+            if candidate in columns:
+                return candidate
+        return None
+
     settings = get_settings()
     postgres_url = settings.postgres_url.strip()
     if postgres_url.startswith("POSTGRES_URL="):
@@ -76,23 +85,51 @@ def debug_postgres(user_id: str = "11111111-1111-1111-1111-111111111111") -> dic
                     counts[table] = cur.fetchone()["count"]
                 cur.execute(
                     """
-                    SELECT
-                      hp."TargetCalories" AS target_calories,
-                      hp."Goal" AS goal,
-                      COUNT(ml."Id") AS meal_logs_count
-                    FROM health_profiles hp
-                    LEFT JOIN meal_logs ml ON ml."UserId" = hp."UserId"
-                    WHERE hp."UserId" = %s
-                    GROUP BY hp."TargetCalories", hp."Goal"
-                    """,
-                    [user_id],
+                    SELECT table_name, column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name IN ('health_profiles', 'meal_logs')
+                    ORDER BY table_name, ordinal_position
+                    """
                 )
-                seeded_user = cur.fetchone()
+                schema_rows = cur.fetchall() or []
+                schema_columns: dict[str, set[str]] = {"health_profiles": set(), "meal_logs": set()}
+                for row in schema_rows:
+                    schema_columns.setdefault(row["table_name"], set()).add(row["column_name"])
+
+                hp_columns = schema_columns.get("health_profiles", set())
+                ml_columns = schema_columns.get("meal_logs", set())
+                hp_user_col = first_existing(hp_columns, "UserId", "user_id")
+                hp_target_col = first_existing(hp_columns, "TargetCalories", "target_calories")
+                hp_goal_col = first_existing(hp_columns, "Goal", "goal")
+                ml_user_col = first_existing(ml_columns, "UserId", "user_id")
+                ml_id_col = first_existing(ml_columns, "Id", "id")
+
+                seeded_user = None
+                if hp_user_col and hp_target_col and hp_goal_col and ml_user_col and ml_id_col:
+                    cur.execute(
+                        f"""
+                        SELECT
+                          hp.{quote_ident(hp_target_col)} AS target_calories,
+                          hp.{quote_ident(hp_goal_col)} AS goal,
+                          COUNT(ml.{quote_ident(ml_id_col)}) AS meal_logs_count
+                        FROM health_profiles hp
+                        LEFT JOIN meal_logs ml ON ml.{quote_ident(ml_user_col)} = hp.{quote_ident(hp_user_col)}
+                        WHERE hp.{quote_ident(hp_user_col)} = %s
+                        GROUP BY hp.{quote_ident(hp_target_col)}, hp.{quote_ident(hp_goal_col)}
+                        """,
+                        [user_id],
+                    )
+                    seeded_user = cur.fetchone()
         return {
             "ok": True,
             "postgres_url": safe_url,
             "connection": info,
             "table_counts": counts,
+            "schema_columns": {
+                "health_profiles": sorted(schema_columns.get("health_profiles", set())),
+                "meal_logs": sorted(schema_columns.get("meal_logs", set())),
+            },
             "seeded_user": dict(seeded_user) if seeded_user else None,
         }
     except Exception as exc:
