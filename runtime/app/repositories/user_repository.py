@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 import re
+import unicodedata
 import uuid
 from typing import Any
 from datetime import datetime, timezone
@@ -17,6 +18,45 @@ from app.core.gemini_pool import get_gemini_pool
 class UserRepository:
     def __init__(self) -> None:
         self.settings = get_settings()
+
+    @staticmethod
+    def _normalize_search_text(value: str | None) -> str:
+        text = (value or "").strip().lower()
+        if not text:
+            return ""
+        text = unicodedata.normalize("NFKD", text)
+        text = "".join(ch for ch in text if not unicodedata.combining(ch))
+        text = text.replace("đ", "d")
+        text = re.sub(r"[^a-z0-9\s]", " ", text)
+        return re.sub(r"\s+", " ", text).strip()
+
+    @classmethod
+    def _normalized_match_score(cls, query: str, primary_value: str | None, extra_values: list[str | None]) -> int | None:
+        normalized_query = cls._normalize_search_text(query)
+        if not normalized_query:
+            return None
+
+        primary_text = cls._normalize_search_text(primary_value)
+        extra_texts = [cls._normalize_search_text(value) for value in extra_values if value]
+        all_texts = [text for text in [primary_text, *extra_texts] if text]
+        if not all_texts:
+            return None
+
+        if primary_text == normalized_query:
+            return 0
+        if primary_text.startswith(normalized_query):
+            return 1
+        if f" {normalized_query} " in f" {primary_text} ":
+            return 2
+        if normalized_query in primary_text:
+            return 3
+        if any(text.startswith(normalized_query) for text in extra_texts):
+            return 4
+        if any(f" {normalized_query} " in f" {text} " for text in extra_texts):
+            return 5
+        if any(normalized_query in text for text in extra_texts):
+            return 6
+        return None
 
     @staticmethod
     def is_uuid(value: str | None) -> bool:
@@ -243,6 +283,40 @@ class UserRepository:
         if client is None:
             return []
         try:
+            normalized_query = self._normalize_search_text(query)
+            if normalized_query:
+                rows = (
+                    client.table(self.settings.recipes_table)
+                    .select("*")
+                    .limit(200)
+                    .execute()
+                    .data
+                    or []
+                )
+                rows = self._hydrate_recipe_rows(rows)
+                scored_rows: list[tuple[int, int, dict]] = []
+                for index, row in enumerate(rows):
+                    score = self._normalized_match_score(
+                        query=query,
+                        primary_value=row.get("title"),
+                        extra_values=[
+                            row.get("description"),
+                            row.get("meal_type"),
+                            row.get("difficulty"),
+                            row.get("name_vi"),
+                            row.get("name_en"),
+                        ],
+                    )
+                    if score is None:
+                        continue
+                    scored_rows.append((score, index, row))
+                if scored_rows:
+                    scored_rows.sort(key=lambda item: (item[0], item[1]))
+                    return [self._normalize_macro_row(row) for _, _, row in scored_rows[:limit]]
+        except Exception:
+            pass
+
+        try:
             fields = ("title", "description", "meal_type", "difficulty")
             rows: list[dict] = []
             seen_ids: set[str] = set()
@@ -266,9 +340,13 @@ class UserRepository:
                 if len(rows) >= limit:
                     break
             rows = self._hydrate_recipe_rows(rows)
-            return [self._normalize_macro_row(r) for r in rows]
+            normalized_rows = [self._normalize_macro_row(r) for r in rows]
+            if normalized_rows:
+                return normalized_rows
         except Exception:
             return []
+
+        return []
 
     def search_recipes_by_embedding(self, query_text: str, limit: int = 5) -> list[dict]:
         query = (query_text or "").strip()
@@ -352,6 +430,37 @@ class UserRepository:
         if client is None:
             return []
         try:
+            normalized_query = self._normalize_search_text(query)
+            if normalized_query:
+                rows = (
+                    client.table(self.settings.foods_table)
+                    .select("*")
+                    .limit(200)
+                    .execute()
+                    .data
+                    or []
+                )
+                scored_rows: list[tuple[int, int, dict]] = []
+                for index, row in enumerate(rows):
+                    score = self._normalized_match_score(
+                        query=query,
+                        primary_value=row.get("name_vi") or row.get("name_en"),
+                        extra_values=[
+                            row.get("name_en"),
+                            row.get("description"),
+                            row.get("category"),
+                        ],
+                    )
+                    if score is None:
+                        continue
+                    scored_rows.append((score, index, row))
+                if scored_rows:
+                    scored_rows.sort(key=lambda item: (item[0], item[1]))
+                    return [self._normalize_macro_row(row) for _, _, row in scored_rows[:limit]]
+        except Exception:
+            pass
+
+        try:
             rows: list[dict] = []
             seen_ids: set[str] = set()
             for field in ("name_vi", "name_en", "description", "category"):
@@ -373,9 +482,13 @@ class UserRepository:
                         break
                 if len(rows) >= limit:
                     break
-            return [self._normalize_macro_row(r) for r in rows]
+            normalized_rows = [self._normalize_macro_row(r) for r in rows]
+            if normalized_rows:
+                return normalized_rows
         except Exception:
             return []
+
+        return []
 
     def resolve_user_id(self, incoming_user_id: str | None, auto_create: bool = True) -> str | None:
         if not incoming_user_id:

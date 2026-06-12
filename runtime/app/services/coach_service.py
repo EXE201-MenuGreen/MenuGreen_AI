@@ -50,12 +50,19 @@ class CoachService:
         meal_keywords = [
             "an gi",
             "nen an gi",
+            "muon an",
+            "toi muon an",
+            "thich an",
+            "toi thich an",
+            "them",
             "goi y bua",
             "goi y bua an",
             "thuc don",
             "ke hoach bua an",
             "hom nay an gi",
             "hom nay nen an gi",
+            "hom nay toi muon an",
+            "hom nay toi thich an",
         ]
         nutrition_keywords = ["bao nhieu carb", "bao nhieu protein", "bao nhieu fat", "con bao nhieu", "calo", "kcal"]
         recipe_keywords = ["pho", "bun", "com", "mon", "recipe", "cong thuc"]
@@ -103,6 +110,26 @@ class CoachService:
         )
         cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,.-\t")
         return cleaned or text
+
+    @staticmethod
+    def _extract_preference_query(message: str) -> str:
+        text = (message or "").strip()
+        if not text:
+            return ""
+        patterns = [
+            r"(?:hôm nay\s+)?(?:tôi\s+)?muốn ăn\s+(.+)",
+            r"(?:hom nay\s+)?(?:toi\s+)?muon an\s+(.+)",
+            r"(?:hôm nay\s+)?(?:tôi\s+)?thích ăn\s+(.+)",
+            r"(?:hom nay\s+)?(?:toi\s+)?thich an\s+(.+)",
+            r"(?:hôm nay\s+)?(?:tôi\s+)?thèm\s+(.+)",
+            r"(?:hom nay\s+)?(?:toi\s+)?them\s+(.+)",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match:
+                extracted = re.sub(r"[?.!,]+$", "", match.group(1).strip())
+                return extracted
+        return ""
 
     @staticmethod
     def _is_vague_food_request(message: str) -> bool:
@@ -197,6 +224,116 @@ class CoachService:
             and self._is_hard_query(message, message)
         )
 
+    def _score_meal_plan_candidate(
+        self,
+        row: dict,
+        remaining_kcal: float,
+        remaining_protein: float,
+        remaining_carbs: float,
+        remaining_fat: float,
+    ) -> float:
+        per_meal_kcal = max(float(remaining_kcal or 0) / 3.0, 350.0)
+        per_meal_protein = max(float(remaining_protein or 0) / 3.0, 20.0)
+        per_meal_carbs = max(float(remaining_carbs or 0) / 3.0, 30.0)
+        per_meal_fat = max(float(remaining_fat or 0) / 3.0, 10.0)
+        kcal = float(row.get("calories_kcal", 0) or 0)
+        protein = float(row.get("protein_g", 0) or 0)
+        carbs = float(row.get("carbs_g", 0) or 0)
+        fat = float(row.get("fat_g", 0) or 0)
+        if kcal <= 0:
+            return 1e9
+        return (
+            abs(kcal - per_meal_kcal) * 0.45
+            + abs(protein - per_meal_protein) * 1.25
+            + abs(carbs - per_meal_carbs) * 0.75
+            + abs(fat - per_meal_fat) * 0.95
+        )
+
+    def _rank_meal_plan_candidates(
+        self,
+        candidates: list[dict],
+        remaining_kcal: float,
+        remaining_protein: float,
+        remaining_carbs: float,
+        remaining_fat: float,
+        limit: int = 3,
+        exclude_names: set[str] | None = None,
+    ) -> list[dict]:
+        exclude_names = exclude_names or set()
+        ranked = sorted(
+            candidates,
+            key=lambda row: self._score_meal_plan_candidate(
+                row,
+                remaining_kcal,
+                remaining_protein,
+                remaining_carbs,
+                remaining_fat,
+            ),
+        )
+        picked: list[dict] = []
+        seen_names = set(exclude_names)
+        for item in ranked:
+            name = str(item.get("name", "")).strip().lower()
+            if not name or name in seen_names:
+                continue
+            seen_names.add(name)
+            picked.append(item)
+            if len(picked) >= limit:
+                break
+        return picked
+
+    def _find_related_meal_plan_items(
+        self,
+        message: str,
+        preference_query: str,
+        remaining_kcal: float,
+        remaining_protein: float,
+        remaining_carbs: float,
+        remaining_fat: float,
+        limit: int = 3,
+    ) -> tuple[list[dict], list[str]]:
+        if not preference_query:
+            return [], []
+
+        related_flags: list[str] = []
+        candidate_pool: list[dict] = []
+        seen_ids: set[str] = set()
+
+        def add_candidates(rows: list[dict]) -> None:
+            for row in rows:
+                row_id = str(row.get("id") or "")
+                if row_id and row_id in seen_ids:
+                    continue
+                if row_id:
+                    seen_ids.add(row_id)
+                candidate_pool.append(row)
+
+        add_candidates(self.repo.search_recipes_by_name(preference_query, limit=12))
+        add_candidates(self.repo.search_foods_by_name(preference_query, limit=12))
+
+        if not candidate_pool and self._should_try_gemini_rewrite(message, preference_query, [], []):
+            rewritten_queries = self._rewrite_recipe_queries_with_gemini(message, preference_query)
+            for rewritten_query in rewritten_queries:
+                before_count = len(candidate_pool)
+                add_candidates(self.repo.search_recipes_by_name(rewritten_query, limit=12))
+                add_candidates(self.repo.search_foods_by_name(rewritten_query, limit=12))
+                if len(candidate_pool) > before_count:
+                    related_flags.append("gemini-rewrite")
+                    break
+
+        if not candidate_pool:
+            return [], related_flags
+
+        ranked = self._rank_meal_plan_candidates(
+            candidate_pool,
+            remaining_kcal=remaining_kcal,
+            remaining_protein=remaining_protein,
+            remaining_carbs=remaining_carbs,
+            remaining_fat=remaining_fat,
+            limit=limit,
+        )
+        return ranked, related_flags
+
     def _rewrite_recipe_queries_with_gemini(self, message: str, base_query: str) -> list[str]:
         if not self.settings.gemini_query_rewrite_enabled or not self.gemini_pool.is_available():
             return []
@@ -289,7 +426,7 @@ class CoachService:
                 intent = heuristic_intent or "general"
             elif intent in ("unknown", ""):
                 intent = heuristic_intent or "general"
-            elif heuristic_intent == "meal_plan" and intent in ("general", "recipe_search"):
+            elif heuristic_intent == "meal_plan" and intent in ("general", "recipe_search", "nutrition_calc"):
                 intent = "meal_plan"
             response_text, route_flags = self._compose_contextual_response(
                 intent,
@@ -461,13 +598,56 @@ class CoachService:
             remain_protein = remaining.get("protein_g", 0)
             remain_carbs = remaining.get("carbs_g", 0)
             remain_fat = remaining.get("fat_g", 0)
-            suggestions = self.repo.suggest_meal_plan_items(
-                remaining_kcal=float(remain_kcal or 0),
-                remaining_protein=float(remain_protein or 0),
-                remaining_carbs=float(remain_carbs or 0),
-                remaining_fat=float(remain_fat or 0),
-                limit=3,
+            has_daily_target = any(
+                float(remaining.get(field, 0) or 0) > 0
+                for field in ("calories_kcal", "protein_g", "carbs_g", "fat_g")
             )
+            preference_query = self._extract_preference_query(message)
+            route_flags: list[str] = []
+
+            suggestions: list[dict] = []
+            if preference_query:
+                suggestions, related_flags = self._find_related_meal_plan_items(
+                    message=message,
+                    preference_query=preference_query,
+                    remaining_kcal=float(remain_kcal or 0),
+                    remaining_protein=float(remain_protein or 0),
+                    remaining_carbs=float(remain_carbs or 0),
+                    remaining_fat=float(remain_fat or 0),
+                    limit=3,
+                )
+                route_flags.extend(related_flags)
+
+            if len(suggestions) < 3:
+                general_suggestions = self.repo.suggest_meal_plan_items(
+                    remaining_kcal=float(remain_kcal or 0),
+                    remaining_protein=float(remain_protein or 0),
+                    remaining_carbs=float(remain_carbs or 0),
+                    remaining_fat=float(remain_fat or 0),
+                    limit=6,
+                )
+                existing_names = {
+                    str(item.get("name", "")).strip().lower()
+                    for item in suggestions
+                    if str(item.get("name", "")).strip()
+                }
+                for item in general_suggestions:
+                    name = str(item.get("name", "")).strip().lower()
+                    if not name or name in existing_names:
+                        continue
+                    existing_names.add(name)
+                    suggestions.append(item)
+                    if len(suggestions) >= 3:
+                        break
+
+            if not suggestions:
+                suggestions = self.repo.suggest_meal_plan_items(
+                    remaining_kcal=float(remain_kcal or 0),
+                    remaining_protein=float(remain_protein or 0),
+                    remaining_carbs=float(remain_carbs or 0),
+                    remaining_fat=float(remain_fat or 0),
+                    limit=3,
+                )
             if suggestions:
                 meal_slots = ("Sáng", "Trưa", "Tối")
                 lines: list[str] = []
@@ -487,13 +667,21 @@ class CoachService:
                     total_fat += f
                     meal_label = meal_slots[idx] if idx < len(meal_slots) else f"Bữa {idx + 1}"
                     lines.append(f"{meal_label}: {name} ({kcal:.1f} kcal, P/C/F {p:.1f}/{c:.1f}/{f:.1f})")
+                intro = "Hôm nay bạn có thể ăn 3 bữa như sau:"
+                if preference_query:
+                    intro = f"Vì bạn muốn ăn {preference_query}, mình gợi ý 3 bữa liên quan như sau:"
+                target_text = (
+                    f"Mục tiêu còn lại trong ngày hiện là {remain_kcal} kcal, "
+                    f"P/C/F = {remain_protein}/{remain_carbs}/{remain_fat}g."
+                    if has_daily_target
+                    else "Bạn chưa thiết lập mục tiêu dinh dưỡng trong ngày, nên mình đang gợi ý theo dữ liệu món hiện có."
+                )
                 return (
-                    f"Hôm nay bạn có thể ăn 3 bữa như sau: {'; '.join(lines)}. "
+                    f"{intro} {'; '.join(lines)}. "
                     f"Tổng 3 bữa khoảng {total_kcal:.1f} kcal, "
                     f"P/C/F = {total_protein:.1f}/{total_carbs:.1f}/{total_fat:.1f}g. "
-                    f"Mục tiêu còn lại trong ngày hiện là {remain_kcal} kcal, "
-                    f"P/C/F = {remain_protein}/{remain_carbs}/{remain_fat}g.",
-                    [],
+                    f"{target_text}",
+                    route_flags,
                 )
 
             gemini_fallback = None
