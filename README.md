@@ -36,7 +36,7 @@ Recommended local prerequisites:
 - Python `3.11+` for runtime work
 - Node.js `20+` for `tools/sync-service-nest`
 - PostgreSQL connection string for the runtime DB
-- Gemini API key if you want hybrid rewrite/fallback enabled
+- One or more Gemini API keys if you want hybrid rewrite/fallback enabled
 
 Runtime setup from a clean clone:
 ```powershell
@@ -46,11 +46,20 @@ python -m venv .venv
 pip install -r requirements-runtime.txt
 ```
 
-Minimal runtime `.env`:
+Single shared root `.env`:
 ```env
 POSTGRES_URL=postgresql://username:password@host:5432/dbname
 GOOGLE_API_KEY=your_gemini_api_key
+GOOGLE_API_KEYS=your_gemini_api_key_1,your_gemini_api_key_2,your_gemini_api_key_3
 ```
+
+Gemini runtime notes:
+- `GOOGLE_API_KEYS` supports multiple comma-separated keys for automatic failover.
+- `GOOGLE_API_KEY` is still supported as a single-key fallback.
+- Runtime caches Gemini rewrites / fallbacks / embeddings in memory to reduce repeated calls.
+- Gemini is only called for harder cases such as failed DB matches or ambiguous food queries.
+- Gemini keys stay server-side only; do not expose them to frontend code or browser env files.
+- Runtime and sync service both read the same root file: [`.env`](/D:/EXE/RAG_AI_MenuGreen/.env)
 
 Run the runtime:
 ```powershell
@@ -62,7 +71,6 @@ uvicorn app.main:app --reload --port 8000
 Sync service setup:
 ```powershell
 cd D:\EXE\RAG_AI_MenuGreen\tools\sync-service-nest
-copy .env.example .env
 npm install
 npm run build
 npm run start:dev

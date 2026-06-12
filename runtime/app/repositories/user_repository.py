@@ -11,6 +11,7 @@ from psycopg.rows import dict_row
 
 from app.core.config import get_settings
 from app.core.database_provider import DatabaseProvider
+from app.core.gemini_pool import get_gemini_pool
 
 
 class UserRepository:
@@ -279,23 +280,14 @@ class UserRepository:
 
         settings = get_settings()
         embedding_model = getattr(settings, "embedding_model", "") or ""
-        try:
-            from google import generativeai as genai
-        except Exception:
-            return []
-
-        try:
-            if settings.google_api_key:
-                genai.configure(api_key=settings.google_api_key)
-            embedding = genai.embed_content(
-                model=embedding_model,
-                content=query,
-                task_type="retrieval_query",
-            )
-            values = embedding.get("embedding", {}).get("values") if isinstance(embedding, dict) else None
-            if not values:
-                return []
-        except Exception:
+        gemini_pool = get_gemini_pool()
+        values = gemini_pool.embed_text(
+            content=query,
+            model=embedding_model,
+            task_type="retrieval_query",
+            cache_namespace="recipe-embedding",
+        )
+        if not values:
             return []
 
         try:

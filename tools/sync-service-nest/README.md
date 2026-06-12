@@ -11,11 +11,13 @@ Cron is set to `*/2 * * * *` (every 2 minutes) in code.
 
 ```powershell
 cd D:\EXE\RAG_AI_MenuGreen\tools\sync-service-nest
-copy .env.example .env
 npm install
 npm run build
 npm run start:dev
 ```
+
+This service reads the shared root env file:
+- [`.env`](/D:/EXE/RAG_AI_MenuGreen/.env)
 
 ## Install Notes
 

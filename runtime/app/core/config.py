@@ -1,12 +1,16 @@
+from pathlib import Path
 from functools import lru_cache
 
 from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
 
+ROOT_ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
+
+
 class Settings(BaseSettings):
     model_config = ConfigDict(
-        env_file=("../.env", ".env"),
+        env_file=str(ROOT_ENV_FILE),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -32,10 +36,13 @@ class Settings(BaseSettings):
 
     # Fallback LLM (phase 2 wiring)
     google_api_key: str = ""
+    google_api_keys: str = ""
     llm_model: str = "gemini-2.5-flash"
     embedding_model: str = "models/gemini-embedding-001"
     gemini_query_rewrite_enabled: bool = True
     gemini_response_fallback_enabled: bool = True
+    gemini_cache_ttl_seconds: int = 3600
+    gemini_cache_max_entries: int = 512
 
     # Optional crawler/discovery knobs
     jina_api_key: str = ""

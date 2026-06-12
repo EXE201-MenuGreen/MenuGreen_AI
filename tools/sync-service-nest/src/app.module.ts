@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { ScheduleModule } from "@nestjs/schedule";
+import { resolve } from "node:path";
 import { AppController } from "./app.controller";
 import { AiWriterService } from "./sync/ai-writer.service";
 import { BeReaderService } from "./sync/be-reader.service";
@@ -11,7 +12,10 @@ import { SyncStateService } from "./sync/sync-state.service";
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: [resolve(__dirname, "../../../.env")],
+    }),
     ScheduleModule.forRoot(),
   ],
   controllers: [AppController, SyncController],

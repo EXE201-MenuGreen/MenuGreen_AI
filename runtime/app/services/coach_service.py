@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 import uuid
 from pathlib import Path
 
 from app.core.config import get_settings
+from app.core.gemini_pool import get_gemini_pool
 from app.core.onnx_intent import OnnxIntentClassifier
 from app.repositories.user_repository import UserRepository
 from app.schemas.chat import ChatRequest, ChatResponse
@@ -22,7 +24,7 @@ class CoachService:
         self.safety = SafetyService()
         self.model_dir = Path(__file__).resolve().parents[2] / self.settings.intent_model_dir
         self.classifier = self._try_load_onnx()
-        self.hybrid_llm = self._try_load_gemini_llm()
+        self.gemini_pool = get_gemini_pool()
 
     def _try_load_onnx(self) -> OnnxIntentClassifier | None:
         try:
@@ -30,51 +32,53 @@ class CoachService:
         except Exception:
             return None
 
-    def _try_load_gemini_llm(self):
-        if not self.settings.google_api_key.strip():
-            return None
-        try:
-            from langchain_google_genai import ChatGoogleGenerativeAI
-        except Exception:
-            return None
-        try:
-            return ChatGoogleGenerativeAI(
-                model=self.settings.llm_model,
-                google_api_key=self.settings.google_api_key,
-                temperature=0.2,
-            )
-        except Exception:
-            return None
-
     @staticmethod
     def _heuristic_intent(message: str) -> str | None:
-        text = (message or "").lower().strip()
-        if not text:
+        text = (message or "").strip()
+        normalized_text = CoachService._normalize_match_text(text)
+        if not normalized_text:
             return None
         search_keywords = [
             "search",
-            "tra cứu",
             "tra cuu",
-            "tìm thông tin",
             "tim thong tin",
-            "nguồn tham khảo",
             "nguon tham khao",
             "latest",
             "newest",
             "research",
         ]
-        meal_keywords = ["an gi", "ăn gì", "goi y bua", "gợi ý bữa", "thuc don", "thực đơn"]
+        meal_keywords = [
+            "an gi",
+            "nen an gi",
+            "goi y bua",
+            "goi y bua an",
+            "thuc don",
+            "ke hoach bua an",
+            "hom nay an gi",
+            "hom nay nen an gi",
+        ]
         nutrition_keywords = ["bao nhieu carb", "bao nhieu protein", "bao nhieu fat", "con bao nhieu", "calo", "kcal"]
-        recipe_keywords = ["pho", "phở", "bun", "bún", "com", "cơm", "mon", "món", "recipe", "cong thuc", "công thức"]
-        if any(k in text for k in search_keywords):
+        recipe_keywords = ["pho", "bun", "com", "mon", "recipe", "cong thuc"]
+        if any(k in normalized_text for k in search_keywords):
             return "ai_search"
-        if any(k in text for k in meal_keywords):
+        if any(k in normalized_text for k in meal_keywords):
             return "meal_plan"
-        if any(k in text for k in nutrition_keywords):
+        if any(k in normalized_text for k in nutrition_keywords):
             return "nutrition_calc"
-        if any(k in text for k in recipe_keywords):
+        if any(k in normalized_text for k in recipe_keywords):
             return "recipe_search"
         return None
+
+    @staticmethod
+    def _normalize_match_text(message: str) -> str:
+        text = (message or "").strip().lower()
+        if not text:
+            return ""
+        text = unicodedata.normalize("NFKD", text)
+        text = "".join(ch for ch in text if not unicodedata.combining(ch))
+        text = text.replace("đ", "d")
+        text = re.sub(r"[^a-z0-9\s]", " ", text)
+        return re.sub(r"\s+", " ", text).strip()
 
     @staticmethod
     def _extract_recipe_query(message: str) -> str:
@@ -105,7 +109,7 @@ class CoachService:
         text = (message or "").strip().lower()
         if not text:
             return True
-        vague_phrases = {
+        vague_phrases = [
             "món khác",
             "mon khac",
             "khác",
@@ -118,8 +122,8 @@ class CoachService:
             "goi y khac",
             "món khác đi",
             "mon khac di",
-        }
-        return text in vague_phrases or len(text.split()) <= 2
+        ]
+        return any(phrase in text for phrase in vague_phrases) or len(text.split()) <= 2
 
     @staticmethod
     def _extract_last_recommended_name(conversation_history) -> str:
@@ -148,35 +152,53 @@ class CoachService:
                 lines.append(line)
         return lines
 
-    def _invoke_gemini_text(self, prompt: str) -> str | None:
-        if self.hybrid_llm is None:
-            return None
-        try:
-            result = self.hybrid_llm.invoke(prompt)
-        except Exception:
-            return None
-        content = getattr(result, "content", None)
-        if isinstance(content, str):
-            return content.strip() or None
-        if isinstance(content, list):
-            parts: list[str] = []
-            for item in content:
-                if isinstance(item, str):
-                    parts.append(item)
-                elif isinstance(item, dict):
-                    text = item.get("text")
-                    if text:
-                        parts.append(str(text))
-                else:
-                    text = getattr(item, "text", None)
-                    if text:
-                        parts.append(str(text))
-            joined = "\n".join(part.strip() for part in parts if str(part).strip()).strip()
-            return joined or None
-        return None
+    def _invoke_gemini_text(self, prompt: str, cache_namespace: str) -> str | None:
+        return self.gemini_pool.invoke_text(
+            prompt=prompt,
+            model=self.settings.llm_model,
+            temperature=0.2,
+            cache_namespace=cache_namespace,
+        )
+
+    @staticmethod
+    def _is_hard_query(message: str, base_query: str = "") -> bool:
+        text = (message or "").strip()
+        query = (base_query or "").strip()
+        if not text:
+            return False
+        if len(text) >= 18:
+            return True
+        if len(query.split()) >= 2:
+            return True
+        if "?" in text or "/" in text or "," in text:
+            return True
+        return len(text.split()) <= 2
+
+    def _should_try_gemini_rewrite(
+        self,
+        message: str,
+        query: str,
+        recipe_candidates: list[dict],
+        food_candidates: list[dict],
+    ) -> bool:
+        return (
+            self.settings.gemini_query_rewrite_enabled
+            and self.gemini_pool.is_available()
+            and not recipe_candidates
+            and not food_candidates
+            and self._is_hard_query(message, query)
+        )
+
+    def _should_try_gemini_fallback(self, message: str, best_item: dict | None) -> bool:
+        return (
+            self.settings.gemini_response_fallback_enabled
+            and self.gemini_pool.is_available()
+            and best_item is None
+            and self._is_hard_query(message, message)
+        )
 
     def _rewrite_recipe_queries_with_gemini(self, message: str, base_query: str) -> list[str]:
-        if not self.settings.gemini_query_rewrite_enabled:
+        if not self.settings.gemini_query_rewrite_enabled or not self.gemini_pool.is_available():
             return []
         seed_query = (base_query or message or "").strip()
         if not seed_query:
@@ -190,7 +212,7 @@ class CoachService:
             f"Base query: {seed_query}\n"
             'Ví dụ output: ["pho bo", "phở bò", "món bò nước"]'
         )
-        raw = self._invoke_gemini_text(prompt)
+        raw = self._invoke_gemini_text(prompt, cache_namespace="recipe-rewrite")
         if not raw:
             return []
         try:
@@ -213,7 +235,7 @@ class CoachService:
         return result[1:]
 
     def _generate_recipe_fallback_with_gemini(self, message: str, context: dict) -> str | None:
-        if not self.settings.gemini_response_fallback_enabled:
+        if not self.settings.gemini_response_fallback_enabled or not self.gemini_pool.is_available():
             return None
         remaining = context.get("remaining_totals", {})
         prompt = (
@@ -226,7 +248,7 @@ class CoachService:
             f"Remaining protein/carbs/fat: {remaining.get('protein_g', 0)}/{remaining.get('carbs_g', 0)}/{remaining.get('fat_g', 0)}\n"
             "Hãy gợi ý 1-2 hướng món hoặc nhóm thực phẩm dễ áp dụng."
         )
-        return self._invoke_gemini_text(prompt)
+        return self._invoke_gemini_text(prompt, cache_namespace="recipe-fallback")
 
     @staticmethod
     def _score_recipe_row(row: dict, query: str, exclude_name: str = "") -> tuple[int, float, int]:
@@ -267,6 +289,8 @@ class CoachService:
                 intent = heuristic_intent or "general"
             elif intent in ("unknown", ""):
                 intent = heuristic_intent or "general"
+            elif heuristic_intent == "meal_plan" and intent in ("general", "recipe_search"):
+                intent = "meal_plan"
             response_text, route_flags = self._compose_contextual_response(
                 intent,
                 context,
@@ -358,7 +382,7 @@ class CoachService:
             recipe_candidates = self.repo.search_recipes_by_name(query, limit=5)
             food_candidates = self.repo.search_foods_by_name(query, limit=5)
 
-            if not recipe_candidates and not food_candidates:
+            if self._should_try_gemini_rewrite(message, query, recipe_candidates, food_candidates):
                 rewritten_queries = self._rewrite_recipe_queries_with_gemini(message, query)
                 for rewritten_query in rewritten_queries:
                     recipe_candidates = self.repo.search_recipes_by_name(rewritten_query, limit=5)
@@ -400,7 +424,9 @@ class CoachService:
                     hybrid_flags,
                 )
 
-            gemini_fallback = self._generate_recipe_fallback_with_gemini(message, context)
+            gemini_fallback = None
+            if self._should_try_gemini_fallback(message, best_item):
+                gemini_fallback = self._generate_recipe_fallback_with_gemini(message, context)
             if gemini_fallback:
                 hybrid_flags.append("gemini-fallback")
                 return gemini_fallback, hybrid_flags
@@ -443,22 +469,36 @@ class CoachService:
                 limit=3,
             )
             if suggestions:
+                meal_slots = ("Sáng", "Trưa", "Tối")
                 lines: list[str] = []
-                for item in suggestions:
+                total_kcal = 0.0
+                total_protein = 0.0
+                total_carbs = 0.0
+                total_fat = 0.0
+                for idx, item in enumerate(suggestions):
                     name = item.get("name", "unknown")
-                    kcal = item.get("calories_kcal", "?")
-                    p = item.get("protein_g", "?")
-                    c = item.get("carbs_g", "?")
-                    f = item.get("fat_g", "?")
-                    lines.append(f"{name} ({kcal} kcal, P/C/F {p}/{c}/{f})")
+                    kcal = float(item.get("calories_kcal", 0) or 0)
+                    p = float(item.get("protein_g", 0) or 0)
+                    c = float(item.get("carbs_g", 0) or 0)
+                    f = float(item.get("fat_g", 0) or 0)
+                    total_kcal += kcal
+                    total_protein += p
+                    total_carbs += c
+                    total_fat += f
+                    meal_label = meal_slots[idx] if idx < len(meal_slots) else f"Bữa {idx + 1}"
+                    lines.append(f"{meal_label}: {name} ({kcal:.1f} kcal, P/C/F {p:.1f}/{c:.1f}/{f:.1f})")
                 return (
-                    f"Gợi ý 3 món theo dữ liệu món Việt hiện có: {'; '.join(lines)}. "
-                    f"Phần còn lại trong ngày: {remain_kcal} kcal, "
+                    f"Hôm nay bạn có thể ăn 3 bữa như sau: {'; '.join(lines)}. "
+                    f"Tổng 3 bữa khoảng {total_kcal:.1f} kcal, "
+                    f"P/C/F = {total_protein:.1f}/{total_carbs:.1f}/{total_fat:.1f}g. "
+                    f"Mục tiêu còn lại trong ngày hiện là {remain_kcal} kcal, "
                     f"P/C/F = {remain_protein}/{remain_carbs}/{remain_fat}g.",
                     [],
                 )
 
-            gemini_fallback = self._generate_recipe_fallback_with_gemini(message, context)
+            gemini_fallback = None
+            if self._should_try_gemini_fallback(message, None):
+                gemini_fallback = self._generate_recipe_fallback_with_gemini(message, context)
             if gemini_fallback:
                 return gemini_fallback, ["gemini-fallback"]
             return (
