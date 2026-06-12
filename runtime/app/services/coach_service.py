@@ -388,6 +388,178 @@ class CoachService:
         return self._invoke_gemini_text(prompt, cache_namespace="recipe-fallback")
 
     @staticmethod
+    def _extract_budget_vnd(message: str) -> int | None:
+        text = CoachService._normalize_match_text(message)
+        if not text:
+            return None
+        patterns = [
+            r"(?:duoi|khong qua|toi da|max)\s*(\d+(?:[.,]\d+)?)\s*(k|nghin|ngan|trieu|vnd|d)?",
+            r"(\d+(?:[.,]\d+)?)\s*(k|nghin|ngan|trieu|vnd)\b",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if not match:
+                continue
+            raw_value = match.group(1).replace(",", ".")
+            unit = (match.group(2) or "").strip()
+            try:
+                value = float(raw_value)
+            except Exception:
+                continue
+            if unit in {"k", "nghin", "ngan"}:
+                return int(value * 1000)
+            if unit == "trieu":
+                return int(value * 1_000_000)
+            return int(value)
+        return None
+
+    @staticmethod
+    def _extract_time_limit_min(message: str) -> int | None:
+        text = CoachService._normalize_match_text(message)
+        if not text:
+            return None
+        match = re.search(r"(\d+)\s*(phut|p)\b", text)
+        if match:
+            try:
+                return max(int(match.group(1)), 1)
+            except Exception:
+                return None
+        if "nhanh" in text or "gap" in text:
+            return 20
+        return None
+
+    @staticmethod
+    def _extract_meal_slot(message: str) -> str | None:
+        text = CoachService._normalize_match_text(message)
+        if not text:
+            return None
+        if any(token in text for token in ("bua trua", "an trua", "trua")):
+            return "lunch"
+        if any(token in text for token in ("bua sang", "an sang", "sang")):
+            return "breakfast"
+        if any(token in text for token in ("bua toi", "an toi", "toi nay", "buoi toi")):
+            return "dinner"
+        return None
+
+    @staticmethod
+    def _wants_remaining_kcal(message: str) -> bool:
+        text = CoachService._normalize_match_text(message)
+        if not text:
+            return False
+        phrases = (
+            "con bao nhieu kcal",
+            "con bao nhieu calo",
+            "bao nhieu kcal con lai",
+            "bao nhieu calo con lai",
+            "con lai bao nhieu kcal",
+            "con lai bao nhieu calo",
+        )
+        return any(phrase in text for phrase in phrases)
+
+    @staticmethod
+    def _meal_slot_label(slot: str | None) -> str:
+        return {
+            "breakfast": "bữa sáng",
+            "lunch": "bữa trưa",
+            "dinner": "bữa tối",
+        }.get(slot or "", "bữa ăn")
+
+    @staticmethod
+    def _meal_slot_score(slot: str | None, row: dict) -> int:
+        if not slot:
+            return 0
+        meal_type = CoachService._normalize_match_text(str(row.get("meal_type") or ""))
+        name = CoachService._normalize_match_text(str(row.get("name") or ""))
+        description = CoachService._normalize_match_text(str(row.get("description") or ""))
+        haystack = " ".join(part for part in (meal_type, name, description) if part)
+        if not haystack:
+            return 1
+
+        breakfast_tokens = ("sang", "yen mach", "sinh to", "smoothie", "oat", "chao")
+        dinner_tokens = ("toi", "salad", "sup", "canh")
+
+        if slot == "breakfast":
+            if any(token in haystack for token in breakfast_tokens):
+                return 0
+            if "trua" in haystack or any(token in haystack for token in dinner_tokens):
+                return 2
+            return 1
+        if slot == "lunch":
+            if any(token in haystack for token in breakfast_tokens):
+                return 2
+            return 0
+        if slot == "dinner":
+            if any(token in haystack for token in dinner_tokens):
+                return 0
+            if any(token in haystack for token in breakfast_tokens):
+                return 2
+            return 1
+        return 0
+
+    def _find_constrained_meal_items(
+        self,
+        context: dict,
+        message: str,
+        limit: int = 3,
+    ) -> tuple[list[dict], dict]:
+        meal_slot = self._extract_meal_slot(message)
+        budget_vnd = self._extract_budget_vnd(message)
+        time_limit_min = self._extract_time_limit_min(message)
+        wants_remaining = self._wants_remaining_kcal(message)
+
+        if not any([meal_slot, budget_vnd, time_limit_min, wants_remaining]):
+            return [], {}
+
+        remaining = context.get("remaining_totals", {})
+        max_price_vnd = budget_vnd if budget_vnd is not None else 250000
+        max_total_time_min = time_limit_min if time_limit_min is not None else 240
+        candidates = self.repo.list_meal_candidates_by_constraints(
+            max_price_vnd=max_price_vnd,
+            max_total_time_min=max_total_time_min,
+            max_items=200,
+        )
+        if not candidates:
+            return [], {
+                "meal_slot": meal_slot,
+                "budget_vnd": budget_vnd,
+                "time_limit_min": time_limit_min,
+                "wants_remaining": wants_remaining,
+            }
+
+        per_meal_target = max(float(remaining.get("calories_kcal", 0) or 0) / 3.0, 350.0)
+        if meal_slot == "breakfast":
+            per_meal_target = min(per_meal_target, 400.0)
+        elif meal_slot == "dinner":
+            per_meal_target = max(per_meal_target, 400.0)
+
+        ranked = sorted(
+            candidates,
+            key=lambda row: (
+                self._meal_slot_score(meal_slot, row),
+                abs(float(row.get("calories_kcal", 0) or 0) - per_meal_target),
+                0 if row.get("source") == "recipe" else 1,
+                float(row.get("estimated_price_vnd", 0) or 0),
+                float((row.get("prep_time_min", 0) or 0) + (row.get("cook_time_min", 0) or 0)),
+            ),
+        )
+        picked: list[dict] = []
+        seen_names: set[str] = set()
+        for row in ranked:
+            name = str(row.get("name") or "").strip().lower()
+            if not name or name in seen_names:
+                continue
+            seen_names.add(name)
+            picked.append(row)
+            if len(picked) >= limit:
+                break
+        return picked, {
+            "meal_slot": meal_slot,
+            "budget_vnd": budget_vnd,
+            "time_limit_min": time_limit_min,
+            "wants_remaining": wants_remaining,
+        }
+
+    @staticmethod
     def _score_recipe_row(row: dict, query: str, exclude_name: str = "") -> tuple[int, float, int]:
         name = str(row.get("name", "")).lower()
         query_text = (query or "").lower().strip()
@@ -604,6 +776,71 @@ class CoachService:
             )
             preference_query = self._extract_preference_query(message)
             route_flags: list[str] = []
+            constrained_items, constraints = self._find_constrained_meal_items(context, message, limit=3)
+
+            remaining_text = ""
+            if constraints.get("wants_remaining"):
+                if has_daily_target:
+                    remaining_text = (
+                        f"Hôm nay bạn đã nạp {totals.get('calories_kcal', 0)} kcal "
+                        f"và còn khoảng {remain_kcal} kcal cho ngày hôm nay. "
+                    )
+                else:
+                    remaining_text = (
+                        f"Hôm nay bạn đã nạp khoảng {totals.get('calories_kcal', 0)} kcal. "
+                        "Mình chưa tính chính xác phần còn lại vì bạn chưa thiết lập mục tiêu ngày. "
+                    )
+
+            if constrained_items:
+                slot_label = self._meal_slot_label(constraints.get("meal_slot"))
+                budget_vnd = constraints.get("budget_vnd")
+                time_limit_min = constraints.get("time_limit_min")
+                condition_parts: list[str] = []
+                if constraints.get("meal_slot"):
+                    condition_parts.append(slot_label)
+                if budget_vnd:
+                    condition_parts.append(f"dưới {budget_vnd:,}đ".replace(",", "."))
+                if time_limit_min:
+                    condition_parts.append(f"trong khoảng {time_limit_min} phút")
+
+                option_lines: list[str] = []
+                for item in constrained_items:
+                    name = item.get("name", "unknown")
+                    kcal = float(item.get("calories_kcal", 0) or 0)
+                    price = int(float(item.get("estimated_price_vnd", 0) or 0))
+                    total_time = int(
+                        float(item.get("total_time_min", 0) or 0)
+                        or float(item.get("prep_time_min", 0) or 0) + float(item.get("cook_time_min", 0) or 0)
+                    )
+                    detail_parts = [f"{kcal:.1f} kcal"]
+                    if price > 0:
+                        detail_parts.append(f"~{price:,}đ".replace(",", "."))
+                    if total_time > 0:
+                        detail_parts.append(f"{total_time} phút")
+                    option_lines.append(f"{name} ({', '.join(detail_parts)})")
+
+                intro = "Mình gợi ý vài món phù hợp như sau"
+                if condition_parts:
+                    intro = f"Với yêu cầu {' '.join(condition_parts)}, mình gợi ý {len(option_lines)} lựa chọn"
+                return (
+                    f"{remaining_text}{intro}: {'; '.join(option_lines)}.",
+                    route_flags,
+                )
+            if constraints and any(
+                constraints.get(key) for key in ("meal_slot", "budget_vnd", "time_limit_min")
+            ):
+                condition_parts: list[str] = []
+                if constraints.get("meal_slot"):
+                    condition_parts.append(self._meal_slot_label(constraints.get("meal_slot")))
+                if constraints.get("budget_vnd"):
+                    condition_parts.append(f"dưới {int(constraints['budget_vnd']):,}đ".replace(",", "."))
+                if constraints.get("time_limit_min"):
+                    condition_parts.append(f"trong khoảng {int(constraints['time_limit_min'])} phút")
+                condition_text = " ".join(condition_parts) if condition_parts else "theo ràng buộc bạn đưa ra"
+                return (
+                    f"{remaining_text}Mình chưa tìm thấy món nào khớp {condition_text} trong DB hiện tại.",
+                    route_flags,
+                )
 
             suggestions: list[dict] = []
             if preference_query:
