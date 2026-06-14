@@ -63,11 +63,40 @@ class CoachService:
             "hom nay nen an gi",
             "hom nay toi muon an",
             "hom nay toi thich an",
+            "an nhe",
+            "do an nhe",
+            "mon mat",
+            "mon nong",
+            "giai nhiet",
         ]
         nutrition_keywords = ["bao nhieu carb", "bao nhieu protein", "bao nhieu fat", "con bao nhieu", "calo", "kcal"]
         recipe_keywords = ["pho", "bun", "com", "mon", "recipe", "cong thuc"]
+        weather_keywords = [
+            "troi nong",
+            "nang nong",
+            "nong buc",
+            "troi lanh",
+            "lanh",
+            "mua",
+            "oi buc",
+            "thoi tiet",
+            "mat troi",
+        ]
+        weather_food_keywords = [
+            "an",
+            "mon",
+            "do an",
+            "goi y",
+            "danh sach",
+            "nhe",
+            "mat",
+            "nong",
+            "giai nhiet",
+        ]
         if any(k in normalized_text for k in search_keywords):
             return "ai_search"
+        if any(k in normalized_text for k in weather_keywords) and any(k in normalized_text for k in weather_food_keywords):
+            return "meal_plan"
         if any(k in normalized_text for k in meal_keywords):
             return "meal_plan"
         if any(k in normalized_text for k in nutrition_keywords):
@@ -130,6 +159,37 @@ class CoachService:
                 extracted = re.sub(r"[?.!,]+$", "", match.group(1).strip())
                 return extracted
         return ""
+
+    @staticmethod
+    def _extract_weather_profile(message: str) -> dict:
+        text = CoachService._normalize_match_text(message)
+        if not text:
+            return {}
+
+        weather: str | None = None
+        if any(token in text for token in ("nang nong", "troi nong", "oi buc", "nong buc", "mua he")):
+            weather = "hot"
+        elif any(token in text for token in ("troi lanh", "lanh", "ret")):
+            weather = "cold"
+        elif "mua" in text:
+            weather = "rainy"
+        elif "mat" in text:
+            weather = "cool"
+
+        wants_light = any(token in text for token in ("an nhe", "do an nhe", "nhe bung", "it dau", "it beo"))
+        wants_refreshing = any(token in text for token in ("mat", "giai nhiet", "thanh mat", "de an"))
+        wants_warm = any(token in text for token in ("am bung", "an nong", "mon nong", "am nong", "am"))
+        wants_list = any(token in text for token in ("danh sach", "goi y", "mon nao", "an gi"))
+
+        profile = {
+            "weather": weather,
+            "wants_light": wants_light,
+            "wants_refreshing": wants_refreshing,
+            "wants_warm": wants_warm,
+            "wants_list": wants_list,
+        }
+        has_weather_signal = bool(weather or wants_light or wants_refreshing or wants_warm)
+        return profile if has_weather_signal else {}
 
     @staticmethod
     def _is_vague_food_request(message: str) -> bool:
@@ -496,6 +556,90 @@ class CoachService:
             return 1
         return 0
 
+    @staticmethod
+    def _weather_keyword_score(profile: dict, row: dict) -> int:
+        weather = profile.get("weather")
+        wants_light = bool(profile.get("wants_light"))
+        wants_refreshing = bool(profile.get("wants_refreshing"))
+        wants_warm = bool(profile.get("wants_warm"))
+
+        name = CoachService._normalize_match_text(str(row.get("name") or ""))
+        description = CoachService._normalize_match_text(str(row.get("description") or ""))
+        meal_type = CoachService._normalize_match_text(str(row.get("meal_type") or ""))
+        haystack = " ".join(part for part in (name, description, meal_type) if part)
+
+        cool_tokens = ("salad", "sinh to", "smoothie", "sua chua", "chanh", "rau", "trai cay", "bo", "mang tay")
+        warm_tokens = ("pho", "bun", "sup", "canh", "chao", "nuoc", "nong", "ham")
+
+        score = 0
+        if weather in ("hot", "cool"):
+            if any(token in haystack for token in cool_tokens):
+                score -= 3
+            if any(token in haystack for token in warm_tokens):
+                score += 3
+        if weather in ("cold", "rainy"):
+            if any(token in haystack for token in warm_tokens):
+                score -= 3
+            if any(token in haystack for token in cool_tokens):
+                score += 2
+        if wants_refreshing and any(token in haystack for token in cool_tokens):
+            score -= 2
+        if wants_warm and any(token in haystack for token in warm_tokens):
+            score -= 2
+        if wants_light:
+            if "salad" in haystack or "rau" in haystack or "sinh to" in haystack:
+                score -= 1
+            if "chien" in haystack or "xao" in haystack:
+                score += 2
+        return score
+
+    def _find_weather_meal_items(
+        self,
+        context: dict,
+        message: str,
+        limit: int = 4,
+    ) -> tuple[list[dict], dict]:
+        profile = self._extract_weather_profile(message)
+        if not profile:
+            return [], {}
+
+        remaining = context.get("remaining_totals", {})
+        candidates = self.repo.list_active_recipes(limit=80) + self.repo.list_active_foods(limit=120)
+        if not candidates:
+            return [], profile
+
+        if profile.get("weather") == "hot":
+            target_kcal = 320.0
+        elif profile.get("weather") in ("cold", "rainy"):
+            target_kcal = 430.0
+        else:
+            target_kcal = max(float(remaining.get("calories_kcal", 0) or 0) / 3.0, 350.0)
+
+        ranked = sorted(
+            candidates,
+            key=lambda row: (
+                self._weather_keyword_score(profile, row),
+                abs(float(row.get("calories_kcal", 0) or 0) - target_kcal),
+                float(row.get("fat_g", 0) or 0) if profile.get("wants_light") or profile.get("weather") == "hot" else 0.0,
+                float(row.get("estimated_price_vnd", 0) or 0),
+            ),
+        )
+
+        picked: list[dict] = []
+        seen_names: set[str] = set()
+        for row in ranked:
+            name = str(row.get("name") or "").strip().lower()
+            if not name or name in seen_names:
+                continue
+            kcal = float(row.get("calories_kcal", 0) or 0)
+            if kcal <= 0:
+                continue
+            seen_names.add(name)
+            picked.append(row)
+            if len(picked) >= limit:
+                break
+        return picked, profile
+
     def _find_constrained_meal_items(
         self,
         context: dict,
@@ -776,6 +920,39 @@ class CoachService:
             )
             preference_query = self._extract_preference_query(message)
             route_flags: list[str] = []
+            weather_items, weather_profile = self._find_weather_meal_items(context, message, limit=4)
+
+            if weather_items and weather_profile:
+                weather = weather_profile.get("weather")
+                weather_label = {
+                    "hot": "trời nắng nóng",
+                    "cold": "trời lạnh",
+                    "rainy": "trời mưa",
+                    "cool": "thời tiết mát",
+                }.get(weather, "thời tiết hiện tại")
+                style_bits: list[str] = []
+                if weather_profile.get("wants_light"):
+                    style_bits.append("nhẹ")
+                if weather_profile.get("wants_refreshing"):
+                    style_bits.append("mát")
+                if weather_profile.get("wants_warm"):
+                    style_bits.append("ấm nóng")
+
+                item_lines: list[str] = []
+                for item in weather_items:
+                    name = item.get("name", "unknown")
+                    kcal = float(item.get("calories_kcal", 0) or 0)
+                    price = int(float(item.get("estimated_price_vnd", 0) or 0))
+                    detail_parts = [f"{kcal:.1f} kcal"]
+                    if price > 0:
+                        detail_parts.append(f"~{price:,}đ".replace(",", "."))
+                    item_lines.append(f"{name} ({', '.join(detail_parts)})")
+
+                style_text = f" kiểu {'/'.join(style_bits)}" if style_bits else ""
+                return (
+                    f"Với {weather_label}{style_text}, mình gợi ý {len(item_lines)} món phù hợp: {'; '.join(item_lines)}.",
+                    route_flags,
+                )
             constrained_items, constraints = self._find_constrained_meal_items(context, message, limit=3)
 
             remaining_text = ""
