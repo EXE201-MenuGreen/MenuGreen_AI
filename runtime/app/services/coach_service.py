@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+from html import unescape
+from html.parser import HTMLParser
 import json
 import re
 import unicodedata
 import uuid
 from pathlib import Path
+from urllib.parse import urlparse
+
+import httpx
 
 from app.core.config import get_settings
 from app.core.gemini_pool import get_gemini_pool
@@ -13,6 +18,44 @@ from app.repositories.user_repository import UserRepository
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.services.context_builder import build_context_snapshot
 from app.services.safety_service import SafetyService
+
+
+class _RecipePageTextExtractor(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.in_script = False
+        self.in_style = False
+        self.text_parts: list[str] = []
+        self.title_parts: list[str] = []
+        self.in_title = False
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        tag = (tag or "").lower()
+        if tag == "script":
+            self.in_script = True
+        elif tag == "style":
+            self.in_style = True
+        elif tag == "title":
+            self.in_title = True
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = (tag or "").lower()
+        if tag == "script":
+            self.in_script = False
+        elif tag == "style":
+            self.in_style = False
+        elif tag == "title":
+            self.in_title = False
+
+    def handle_data(self, data: str) -> None:
+        if self.in_script or self.in_style:
+            return
+        text = re.sub(r"\s+", " ", unescape(data or "")).strip()
+        if not text:
+            return
+        if self.in_title:
+            self.title_parts.append(text)
+        self.text_parts.append(text)
 
 
 class CoachService:
@@ -38,6 +81,42 @@ class CoachService:
         normalized_text = CoachService._normalize_match_text(text)
         if not normalized_text:
             return None
+        out_of_domain_keywords = [
+            "viet giup",
+            "viet email",
+            "email xin nghi",
+            "ke chuyen cuoi",
+            "tong thong",
+            "xem phim",
+            "facebook",
+            "flutter",
+            "laptop gaming",
+            "lich da bong",
+            "tao anh",
+            "dich doan",
+            "thoi tiet the nao",
+            "fps",
+            "choi game",
+            "game",
+            "buon qua",
+            "noi chuyen voi toi",
+            "tarot",
+            "emoji",
+            "icon",
+        ]
+        product_capability_keywords = [
+            "menugreen",
+            "lich su kcal",
+            "luu lich su",
+            "co luu",
+            "co tinh nang",
+            "co ho tro",
+            "tai khoan",
+            "dang ky",
+            "dang nhap",
+            "app nay",
+            "ung dung nay",
+        ]
         search_keywords = [
             "search",
             "tra cuu",
@@ -49,14 +128,19 @@ class CoachService:
         ]
         meal_keywords = [
             "an gi",
+            "an j",
             "nen an gi",
+            "mon gi",
             "muon an",
             "toi muon an",
             "thich an",
             "toi thich an",
-            "them",
             "goi y bua",
             "goi y bua an",
+            "goi y mon",
+            "goi y 3 mon",
+            "co mon nao",
+            "mon nao",
             "thuc don",
             "ke hoach bua an",
             "hom nay an gi",
@@ -68,9 +152,132 @@ class CoachService:
             "mon mat",
             "mon nong",
             "giai nhiet",
+            "doi mon",
+            "eat clean",
+            "healthy",
+            "no lau",
+            "nhanh",
+            "nhe bung",
+            "du chat",
+            "it beo",
+            "it dau",
+            "re hon",
+            "re re",
+            "mon re cho sv",
+            "cho sv",
+            "it tien",
+            "co mon khac",
+            "khac khong",
+            "bua trua thoi",
+            "bua toi thoi",
+            "bua sang thoi",
+            "toi dang giam can",
+            "giam can",
+            "khong dung y toi",
         ]
-        nutrition_keywords = ["bao nhieu carb", "bao nhieu protein", "bao nhieu fat", "con bao nhieu", "calo", "kcal"]
-        recipe_keywords = ["pho", "bun", "com", "mon", "recipe", "cong thuc"]
+        meal_fragment_keywords = [
+            "di ung",
+            "hai san",
+            "khong an",
+            "khong uong",
+            "khong cay",
+            "dung co",
+            "dung goi y",
+            "doi sang",
+            "doi mon",
+            "mon nuoc",
+            "mon khac",
+            "2 mon khac",
+            "them 2 mon",
+            "no toi chieu",
+            "nhieu dam",
+            "it carb",
+            "it dau",
+            "it beo",
+            "du chat",
+            "re nhat",
+            "re hon",
+            "bua trua",
+            "bua toi",
+            "bua sang",
+            "30k",
+            "40k",
+            "50k",
+            "60k",
+            "70k",
+            "80k",
+            "90k",
+            "100k",
+        ]
+        nutrition_keywords = [
+            "bao nhieu carb",
+            "bao nhieu protein",
+            "bao nhieu fat",
+            "con bao nhieu",
+            "calo",
+            "kcal",
+            "protein",
+            "carb",
+            "fat",
+            "macro",
+            "vuot kcal",
+            "du chua",
+            "con lai",
+            "tinh kcal",
+            "tinh giup",
+        ]
+        nutrition_calc_keywords = [
+            "tinh",
+            "bao nhieu",
+            "tong",
+            "vuot",
+            "thieu",
+            "uoc luong",
+            "log",
+            "ghi nhan",
+            "nhap nham",
+            "sua lai",
+            "tinh lai",
+            "xoa",
+            "con lai",
+            "sai so",
+            "gram",
+            "g protein",
+            "g carb",
+            "g fat",
+            "kcal",
+            "calo",
+        ]
+        nutrition_log_keywords = [
+            "toi vua an",
+            "toi da an",
+            "hom nay toi moi an",
+            "nay an",
+            "an roi",
+            "vua uong",
+            "vua an",
+            "log giup",
+            "log dum",
+            "log mon",
+        ]
+        recipe_keywords = [
+            "recipe",
+            "cong thuc",
+            "cach nau",
+            "cach lam",
+            "nguyen lieu",
+            "nau sao",
+            "co mon nao giong",
+        ]
+        recipe_followup_keywords = [
+            "mat bao lau nau",
+            "nau nhanh khong",
+            "thay gi",
+            "nguyen lieu",
+            "co trung khong",
+            "mon do",
+            "mon dau",
+        ]
         weather_keywords = [
             "troi nong",
             "nang nong",
@@ -93,16 +300,109 @@ class CoachService:
             "nong",
             "giai nhiet",
         ]
+        meal_constraint_keywords = [
+            "bua sang",
+            "bua trua",
+            "bua toi",
+            "an sang",
+            "an trua",
+            "an toi",
+            "duoi",
+            "budget",
+            "tam",
+            "phut",
+        ]
+        meal_suggestion_keywords = [
+            "goi y",
+            "an gi",
+            "nen an gi",
+            "bua sang",
+            "bua trua",
+            "bua toi",
+            "muon an",
+            "thich an",
+        ]
+        if any(k in normalized_text for k in out_of_domain_keywords):
+            return "general"
+        if any(k in normalized_text for k in product_capability_keywords) and any(
+            token in normalized_text for token in ("khong", "co", "luu", "tinh nang", "ho tro", "lich su")
+        ):
+            return "general"
         if any(k in normalized_text for k in search_keywords):
             return "ai_search"
-        if any(k in normalized_text for k in weather_keywords) and any(k in normalized_text for k in weather_food_keywords):
+        if normalized_text.startswith(("hom nay an j", "hom nay an gi", "toi nay an gi", "sang nay an gi")):
             return "meal_plan"
-        if any(k in normalized_text for k in meal_keywords):
-            return "meal_plan"
-        if any(k in normalized_text for k in nutrition_keywords):
-            return "nutrition_calc"
-        if any(k in normalized_text for k in recipe_keywords):
+        if "eat clean" in normalized_text and any(token in normalized_text for token in ("salad", "mon", "nao")):
             return "recipe_search"
+        if re.search(r"^lam\s+.+\b(cho nguoi moi bat dau|de khong|de nau)\b", normalized_text):
+            return "recipe_search"
+
+        has_recipe_signal = (
+            any(k in normalized_text for k in recipe_keywords)
+            or any(k in normalized_text for k in recipe_followup_keywords)
+            or bool(re.search(r"^nau\s", normalized_text))
+            or bool(
+                re.search(
+                    r"^lam\s+.+\b(sot|canh|cuon|chao|xao|hap|chien|nuong|salad|sup|bun|com|mi)\b",
+                    normalized_text,
+                )
+            )
+            or ("lam trong" in normalized_text and "phut" in normalized_text)
+        )
+        has_nutrition_signal = any(k in normalized_text for k in nutrition_keywords) or any(
+            k in normalized_text for k in nutrition_calc_keywords
+        )
+        has_numeric_macro_signal = bool(
+            re.search(r"\b\d+\s*(g|gram|kcal|calo)\b", normalized_text)
+        ) and any(token in normalized_text for token in ("protein", "carb", "fat", "dam", "kcal", "calo"))
+        has_log_signal = any(k in normalized_text for k in nutrition_log_keywords)
+        has_budget_or_time = bool(re.search(r"\d+\s*(k|phut|p)\b", normalized_text))
+        has_meal_signal = any(k in normalized_text for k in meal_keywords)
+        has_meal_fragment = (
+            any(k in normalized_text for k in meal_fragment_keywords)
+            or bool(re.fullmatch(r"\d+\s*k", normalized_text))
+            or normalized_text in {"toi", "trua", "sang", "bua toi", "bua trua", "bua sang"}
+        )
+        has_weather_food_signal = any(k in normalized_text for k in weather_keywords) and any(
+            k in normalized_text for k in weather_food_keywords
+        )
+        has_macro_target_only = (
+            any(token in normalized_text for token in ("protein", "carb", "fat", "kcal", "calo", "dam"))
+            and not any(token in normalized_text for token in ("tinh", "bao nhieu", "tong", "vuot", "thieu", "log", "xoa", "sua"))
+            and any(token in normalized_text for token in ("can", "muon", "con", "it", "nhieu"))
+        )
+
+        if has_recipe_signal:
+            return "recipe_search"
+        if has_weather_food_signal:
+            return "meal_plan"
+        if has_meal_signal and any(
+            token in normalized_text for token in ("an gi", "nen an gi", "goi y", "co mon nao", "muon an", "thich an")
+        ):
+            return "meal_plan"
+        if has_log_signal:
+            return "nutrition_calc"
+        if (
+            has_nutrition_signal
+            and any(token in normalized_text for token in ("tinh", "bao nhieu", "tong", "vuot", "thieu", "uoc luong", "log", "xoa", "sua", "con lai"))
+        ) or has_numeric_macro_signal:
+            return "nutrition_calc"
+        if re.search(r"\ban .+ duoc khong\b", normalized_text) and not any(
+            token in normalized_text for token in ("an gi", "nen an gi")
+        ):
+            return "nutrition_calc"
+        if has_meal_fragment or has_macro_target_only:
+            return "meal_plan"
+        if has_meal_signal:
+            return "meal_plan"
+        if has_nutrition_signal:
+            return "nutrition_calc"
+        if has_budget_or_time and any(k in normalized_text for k in meal_constraint_keywords + weather_food_keywords):
+            return "meal_plan"
+        if re.search(r"\bco mon .+ nao\b", normalized_text):
+            return "meal_plan"
+        if any(k in normalized_text for k in weather_keywords):
+            return "general"
         return None
 
     @staticmethod
@@ -115,6 +415,271 @@ class CoachService:
         text = text.replace("đ", "d")
         text = re.sub(r"[^a-z0-9\s]", " ", text)
         return re.sub(r"\s+", " ", text).strip()
+
+    @staticmethod
+    def _extract_urls(message: str) -> list[str]:
+        text = (message or "").strip()
+        if not text:
+            return []
+        matches = re.findall(r"https?://[^\s<>\"]+", text, flags=re.IGNORECASE)
+        urls: list[str] = []
+        seen: set[str] = set()
+        for match in matches:
+            url = match.rstrip(").,!?;:")
+            if url in seen:
+                continue
+            seen.add(url)
+            urls.append(url)
+        return urls
+
+    @staticmethod
+    def _infer_contextual_intent(
+        message: str,
+        conversation_history=None,
+        last_recommended_name: str = "",
+    ) -> str | None:
+        if not conversation_history:
+            return None
+        normalized_text = CoachService._normalize_match_text(message)
+        if not normalized_text:
+            return None
+
+        recent_messages = conversation_history[-6:] if isinstance(conversation_history, list) else []
+        recent_text = " ".join(
+            CoachService._normalize_match_text(getattr(item, "content", "") or "")
+            for item in recent_messages
+        ).strip()
+        has_recipe_context = any(
+            token in recent_text
+            for token in (
+                "cong thuc",
+                "cach nau",
+                "nguyen lieu",
+                "nau",
+                "recipe",
+            )
+        ) or bool(last_recommended_name)
+        has_meal_context = any(
+            token in recent_text
+            for token in (
+                "goi y",
+                "thuc don",
+                "bua",
+                "calo",
+                "kcal",
+                "p c f",
+                "protein",
+                "carb",
+                "fat",
+            )
+        )
+
+        if any(
+            token in normalized_text
+            for token in ("tinh", "kcal", "calo", "protein", "carb", "fat", "macro", "log", "nhap nham", "xoa")
+        ):
+            return "nutrition_calc"
+
+        if has_recipe_context and any(
+            token in normalized_text
+            for token in (
+                "mon do",
+                "mon dau",
+                "nau",
+                "thay",
+                "nguyen lieu",
+                "bao lau",
+                "nhanh hon",
+                "lam nhanh",
+                "de hon",
+                "noi com dien",
+            )
+        ):
+            return "recipe_search"
+
+        if has_meal_context and any(
+            token in normalized_text
+            for token in (
+                "khong an",
+                "khong uong",
+                "di ung",
+                "dung co",
+                "goi y",
+                "mon nuoc",
+                "mon khac",
+                "lua chon khac",
+                "bua toi",
+                "bua trua",
+                "bua sang",
+                "30k",
+                "40k",
+                "50k",
+                "60k",
+                "it carb",
+                "nhieu dam",
+                "re hon",
+                "re nhat",
+            )
+        ):
+            return "meal_plan"
+
+        return None
+
+    @staticmethod
+    def _looks_like_recipe_url(message: str, url: str) -> bool:
+        text = CoachService._normalize_match_text(message)
+        parsed = urlparse(url)
+        path = CoachService._normalize_match_text(parsed.path.replace("-", " ").replace("/", " "))
+        recipe_hints = (
+            "recipe",
+            "recipes",
+            "cong thuc",
+            "cach nau",
+            "mon an",
+            "food",
+            "cook",
+            "kitchen",
+            "allrecipes",
+            "foodnetwork",
+        )
+        return any(hint in text for hint in ("link", "url", "cong thuc", "cach nau", "phan tich")) or any(
+            hint in path or hint in parsed.netloc.lower() for hint in recipe_hints
+        )
+
+    @staticmethod
+    def _extract_recipe_page_payload(html: str, url: str) -> dict:
+        parser = _RecipePageTextExtractor()
+        parser.feed(html or "")
+        parser.close()
+        title = " ".join(parser.title_parts).strip()
+        text = " ".join(parser.text_parts)
+        text = re.sub(r"\s+", " ", text).strip()
+        return {
+            "url": url,
+            "title": title[:300],
+            "content": text[:15000],
+        }
+
+    def _fetch_recipe_page_payload(self, url: str) -> dict | None:
+        try:
+            with httpx.Client(
+                follow_redirects=True,
+                timeout=20.0,
+                headers={
+                    "User-Agent": "MenuGreenAI/1.0 (+recipe-link-analysis)"
+                },
+            ) as client:
+                response = client.get(url)
+                response.raise_for_status()
+                content_type = str(response.headers.get("content-type", "")).lower()
+                if "text/html" not in content_type and "application/xhtml+xml" not in content_type:
+                    page = None
+                else:
+                    page = self._extract_recipe_page_payload(response.text, str(response.url))
+                if page and page.get("content"):
+                    return page
+        except Exception:
+            pass
+
+        try:
+            sanitized_url = re.sub(r"^https?://", "", url.strip(), flags=re.IGNORECASE)
+            reader_url = f"https://r.jina.ai/http://{sanitized_url}"
+            with httpx.Client(
+                follow_redirects=True,
+                timeout=30.0,
+                headers={
+                    "User-Agent": "MenuGreenAI/1.0 (+recipe-link-analysis)"
+                },
+            ) as client:
+                response = client.get(reader_url)
+                response.raise_for_status()
+                text = response.text or ""
+                normalized = self._normalize_match_text(text[:1200])
+                if any(
+                    token in normalized
+                    for token in (
+                        "captcha",
+                        "forbidden",
+                        "verification successful",
+                        "just a moment",
+                    )
+                ):
+                    return None
+                title_match = re.search(r"^Title:\s*(.+)$", text, flags=re.MULTILINE)
+                title = title_match.group(1).strip() if title_match else url
+                body = re.sub(r"\s+", " ", text).strip()
+                return {
+                    "url": url,
+                    "title": title[:300],
+                    "content": body[:15000],
+                }
+        except Exception:
+            return None
+
+    def _analyze_recipe_link(self, message: str, url: str) -> tuple[str, list[str]] | None:
+        if self.gemini_pool.is_available():
+            prompt = (
+                "Bạn là AI Coach cho app món ăn MenuGreen.\n"
+                "Hãy phân tích link recipe dưới đây và trả lời NGẮN bằng tiếng Việt.\n"
+                "Yêu cầu:\n"
+                "1. Xác định tên món.\n"
+                "2. Tóm tắt món này là món gì.\n"
+                "3. Liệt kê nguyên liệu chính tối đa 8 ý.\n"
+                "4. Tóm tắt cách nấu tối đa 5 bước ngắn.\n"
+                "5. Nếu thấy thời gian nấu hoặc khẩu phần thì nêu ra.\n"
+                "6. Nếu link không phải recipe hoặc không đọc được, nói rõ điều đó.\n"
+                "Không bịa thông tin.\n"
+                f"User message: {message.strip()}\n"
+                f"URL: {url}\n"
+            )
+            text = self.gemini_pool.invoke_url_context(
+                prompt=prompt,
+                url=url,
+                model=self.settings.llm_model,
+                temperature=0.2,
+                cache_namespace="recipe-link-url-context",
+            )
+            if text:
+                return text, ["recipe-link", "gemini-url-context"]
+
+        page = self._fetch_recipe_page_payload(url)
+        if not page:
+            return (
+                "Mình chưa đọc được nội dung từ link này. Bạn thử gửi link public của trang công thức hoặc dán thêm tên món để mình hỗ trợ tiếp.",
+                ["url-fetch-failed"],
+            )
+
+        if not self.gemini_pool.is_available():
+            title = page.get("title") or url
+            return (
+                f"Mình đã đọc được link recipe này: {title}. Hiện server chưa bật Gemini nên mình chưa phân tích sâu ingredient và steps tự động được.",
+                ["url-fetched"],
+            )
+
+        prompt = (
+            "Bạn là AI Coach cho app món ăn MenuGreen.\n"
+            "Hãy phân tích nội dung trang web công thức nấu ăn dưới đây và trả lời NGẮN bằng tiếng Việt.\n"
+            "Yêu cầu:\n"
+            "1. Xác định tên món.\n"
+            "2. Tóm tắt món này là món gì.\n"
+            "3. Liệt kê nguyên liệu chính tối đa 8 ý.\n"
+            "4. Tóm tắt cách nấu tối đa 5 bước ngắn.\n"
+            "5. Nếu thấy thời gian nấu hoặc khẩu phần thì nêu ra.\n"
+            "6. Nếu nội dung không giống trang recipe, nói rõ là link này không đủ dữ liệu công thức.\n"
+            "Không bịa nếu trang không có thông tin.\n"
+            f"User message: {message.strip()}\n"
+            f"URL: {page.get('url')}\n"
+            f"Page title: {page.get('title')}\n"
+            f"Page content:\n{page.get('content')}\n"
+        )
+        text = self._invoke_gemini_text(prompt, cache_namespace="recipe-link-analysis")
+        if not text:
+            title = page.get("title") or url
+            return (
+                f"Mình đã mở được link này: {title}, nhưng Gemini chưa trả về phân tích lúc này. Bạn thử lại sau hoặc gửi thêm tên món giúp mình.",
+                ["url-fetched", "gemini-fallback-failed"],
+            )
+        return text, ["recipe-link", "gemini-url-analysis"]
 
     @staticmethod
     def _extract_recipe_query(message: str) -> str:
@@ -733,15 +1298,46 @@ class CoachService:
         logs_7d = self.repo.get_meal_logs_7d(request.user_id) if request.user_id else []
         context = build_context_snapshot(profile, logs_7d)
         last_recommended_name = self._extract_last_recommended_name(request.conversation_history)
+        urls = self._extract_urls(request.message)
+        contextual_intent = self._infer_contextual_intent(
+            request.message,
+            request.conversation_history,
+            last_recommended_name,
+        )
+        is_short_followup = len(self._normalize_match_text(request.message).split()) <= 8
 
-        if self.classifier is not None:
+        if urls and self._looks_like_recipe_url(request.message, urls[0]):
+            analyzed = self._analyze_recipe_link(request.message, urls[0])
+            if analyzed:
+                response_text, route_flags = analyzed
+                intent = "recipe_search"
+                source = (
+                    "gemini"
+                    if "gemini-url-analysis" in route_flags or "gemini-url-context" in route_flags
+                    else "fallback"
+                )
+                confidence = None
+            else:
+                intent = self._heuristic_intent(request.message) or "general"
+                response_text, route_flags = self._compose_contextual_response(
+                    intent,
+                    context,
+                    request.message,
+                    request.conversation_history,
+                    last_recommended_name,
+                )
+                source = "fallback"
+                confidence = None
+        elif self.classifier is not None:
             intent, score = self.classifier.predict(request.message)
             threshold = float(getattr(self.settings, "intent_confidence_threshold", 0.45))
             heuristic_intent = self._heuristic_intent(request.message)
             if score < threshold:
-                intent = heuristic_intent or "general"
+                intent = contextual_intent or heuristic_intent or "general"
             elif intent in ("unknown", ""):
-                intent = heuristic_intent or "general"
+                intent = contextual_intent or heuristic_intent or "general"
+            elif contextual_intent and is_short_followup:
+                intent = contextual_intent
             elif heuristic_intent == "meal_plan" and intent in ("general", "recipe_search", "nutrition_calc"):
                 intent = "meal_plan"
             response_text, route_flags = self._compose_contextual_response(
@@ -754,7 +1350,7 @@ class CoachService:
             source = "onnx"
             confidence = round(score, 4)
         else:
-            intent = self._heuristic_intent(request.message) or "general"
+            intent = contextual_intent or self._heuristic_intent(request.message) or "general"
             response_text, route_flags = self._compose_contextual_response(
                 intent,
                 context,

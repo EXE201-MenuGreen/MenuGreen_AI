@@ -189,6 +189,57 @@ class GeminiPool:
                 )
         return None
 
+    def invoke_url_context(
+        self,
+        prompt: str,
+        url: str,
+        model: str,
+        temperature: float = 0.2,
+        cache_namespace: str = "url-context",
+    ) -> str | None:
+        if not self.keys or not url.strip():
+            return None
+
+        cache_key = self._cache_key(
+            cache_namespace,
+            {"prompt": prompt, "url": url.strip(), "model": model, "temperature": temperature},
+        )
+        cached = self._get_cached(cache_key)
+        if isinstance(cached, str):
+            return cached
+
+        try:
+            from google import genai
+            from google.genai import types
+        except Exception as exc:
+            self.logger.warning("Gemini URL context client unavailable: %s", exc.__class__.__name__)
+            return None
+
+        for index in self._key_indexes():
+            api_key = self.keys[index]
+            try:
+                client = genai.Client(api_key=api_key)
+                response = client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        temperature=temperature,
+                        tools=[{"url_context": {}}],
+                    ),
+                )
+                text = (getattr(response, "text", None) or "").strip()
+                if text:
+                    self._set_cached(cache_key, text)
+                    self._mark_success(index)
+                    return text
+            except Exception as exc:
+                self.logger.warning(
+                    "Gemini URL context request failed for key %s: %s",
+                    self._mask_key(api_key),
+                    self._error_kind(exc),
+                )
+        return None
+
     def embed_text(
         self,
         content: str,
