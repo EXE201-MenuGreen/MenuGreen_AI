@@ -1,0 +1,54 @@
+# Git / local metadata
+.git
+.gitignore
+.gitattributes
+
+# Secrets and local env files must be passed as real environment variables.
+.env
+.env.*
+runtime/.env
+
+# Python virtualenvs and caches
+.venv/
+.venv*/
+.venv311/
+**/.venv/
+**/.venv*/
+**/.venv311/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+
+# Node / generated assets not required by the FastAPI runtime image
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+package-lock.json
+
+# Dev, research, training, and local-only artifacts
+docs/
+infra/
+research/
+tests/
+tools/
+requirements-dev.txt
+research_query_648.csv
+MenuGreen_AI_SeedData.sql
+Huong-dan-setup.txt
+*_error.log
+*.log
+
+# Keep the quantized ONNX runtime bundle, but skip the large fp32 fallback model
+# to keep AWS images smaller. Remove this line if fp32 fallback is required.
+runtime/models/intent_onnx/model.onnx
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
