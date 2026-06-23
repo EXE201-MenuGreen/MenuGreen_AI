@@ -16,6 +16,7 @@ from app.core.gemini_pool import get_gemini_pool
 from app.core.onnx_intent import OnnxIntentClassifier
 from app.repositories.user_repository import UserRepository
 from app.schemas.chat import ChatRequest, ChatResponse
+from app.services.action_service import ActionService, context_summary_from_snapshot
 from app.services.context_builder import build_context_snapshot
 from app.services.safety_service import SafetyService
 
@@ -65,6 +66,7 @@ class CoachService:
         self.settings = get_settings()
         self.repo = UserRepository()
         self.safety = SafetyService()
+        self.action_service = ActionService()
         self.model_dir = Path(__file__).resolve().parents[2] / self.settings.intent_model_dir
         self.classifier = self._try_load_onnx()
         self.gemini_pool = get_gemini_pool()
@@ -1396,6 +1398,11 @@ class CoachService:
             thread_id=thread_id,
             intent_confidence=confidence,
             subscription_tier=plan if plan in ("free", "saving", "energy", "performance") else "free",
+            actions=self.action_service.suggest_for_chat(intent, request.message, context),
+            suggested_prompts=self.action_service.suggested_prompts(context, intent),
+            safety_flags=safety_flags,
+            context_summary=context_summary_from_snapshot(context),
+            recommendation_refs=[],
         )
 
     def _compose_contextual_response(

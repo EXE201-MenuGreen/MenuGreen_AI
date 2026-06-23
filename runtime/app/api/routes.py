@@ -1,4 +1,8 @@
+import asyncio
+import json
+
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 import psycopg
 from psycopg.rows import dict_row
 
@@ -20,18 +24,27 @@ from app.schemas.feedback import (
     ReviewTrainingSampleRequest,
     TrainingSample,
 )
+from app.schemas.actions import ExecuteActionRequest, ExecuteActionResponse
+from app.schemas.context import WorkerContextResponse
 from app.schemas.meal_plan import MealPlan7dRequest, MealPlan7dResponse
+from app.schemas.recommendations import RecommendationRequest, RecommendationResponse
 from app.repositories.user_repository import UserRepository
+from app.services.action_service import ActionService
+from app.services.context_service import ContextService
 from app.services.curation_service import CurationService
 from app.services.coach_service import CoachService
 from app.services.crawler_service import ingest_normalized, normalize_payload
 from app.services.meal_plan_service import MealPlanService
+from app.services.recommendation_service import RecommendationMode, RecommendationService
 
 router = APIRouter()
 coach_service = CoachService()
 user_repo = UserRepository()
 curation_service = CurationService()
 meal_plan_service = MealPlanService()
+context_service = ContextService(user_repo)
+recommendation_service = RecommendationService(user_repo, context_service)
+action_service = ActionService()
 
 
 @router.get("/health")
@@ -143,6 +156,76 @@ def debug_postgres(user_id: str = "11111111-1111-1111-1111-111111111111") -> dic
 @router.post("/worker/chat", response_model=ChatResponse)
 async def worker_chat(request: ChatRequest) -> ChatResponse:
     return await coach_service.reply(request)
+
+
+def _sse(event: str, payload: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+@router.post("/worker/chat/stream")
+async def worker_chat_stream(request: ChatRequest) -> StreamingResponse:
+    async def event_stream():
+        try:
+            yield _sse("start", {"request_id": request.request_id, "thread_id": request.thread_id})
+            response = await coach_service.reply(request)
+            text = response.response or ""
+            for index in range(0, len(text), 120):
+                yield _sse("delta", {"text": text[index:index + 120]})
+                await asyncio.sleep(0)
+            if response.actions:
+                yield _sse("actions", {"items": [action.model_dump(mode="json") for action in response.actions]})
+            if response.safety_flags:
+                yield _sse("safety", {"flags": response.safety_flags})
+            yield _sse("final", response.model_dump(mode="json"))
+            yield _sse("done", {"ok": True, "request_id": response.request_id})
+        except Exception as exc:
+            yield _sse("error", {"detail": str(exc)})
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@router.get("/worker/context", response_model=WorkerContextResponse)
+def worker_context(user_id: str, date: str | None = None) -> WorkerContextResponse:
+    return context_service.build_context(user_id=user_id, target_date=date)
+
+
+def _recommend(request: RecommendationRequest, mode: RecommendationMode) -> RecommendationResponse:
+    return recommendation_service.recommend(request, mode)
+
+
+@router.post("/api/ai/recommendations/generate", response_model=RecommendationResponse)
+def generate_recommendations(request: RecommendationRequest) -> RecommendationResponse:
+    return _recommend(request, "generate")
+
+
+@router.post("/api/ai/recommendations/safe", response_model=RecommendationResponse)
+def generate_safe_recommendations(request: RecommendationRequest) -> RecommendationResponse:
+    return _recommend(request, "safe")
+
+
+@router.post("/api/ai/recommendations/daily-menu", response_model=RecommendationResponse)
+def generate_daily_menu(request: RecommendationRequest) -> RecommendationResponse:
+    return _recommend(request, "daily-menu")
+
+
+@router.post("/api/ai/recommendations/weekly-plan", response_model=RecommendationResponse)
+def generate_weekly_plan(request: RecommendationRequest) -> RecommendationResponse:
+    return _recommend(request, "weekly-plan")
+
+
+@router.post("/api/ai/recommendations/budget-aware", response_model=RecommendationResponse)
+def generate_budget_aware(request: RecommendationRequest) -> RecommendationResponse:
+    return _recommend(request, "budget-aware")
+
+
+@router.post("/api/ai/recommendations/smart-schedule", response_model=RecommendationResponse)
+def generate_smart_schedule(request: RecommendationRequest) -> RecommendationResponse:
+    return _recommend(request, "smart-schedule")
+
+
+@router.post("/api/ai/actions/execute", response_model=ExecuteActionResponse)
+def execute_action(request: ExecuteActionRequest) -> ExecuteActionResponse:
+    return action_service.execute_basic(request)
 
 
 @router.post("/admin/crawler/normalize", response_model=CrawlerNormalizeResponse)

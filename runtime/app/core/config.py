@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     serve_frontend: bool = True
     safety_max_response_chars: int = 1200
     safety_block_medical_keywords: bool = True
+    ai_runtime_internal_key: str = ""
 
 
 @lru_cache(maxsize=1)

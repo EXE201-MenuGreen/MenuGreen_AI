@@ -221,6 +221,197 @@ class UserRepository:
                 except Exception:
                     return []
 
+    def get_ai_profile(self, user_id: str) -> dict | None:
+        resolved_id = self.resolve_user_id(user_id)
+        if not resolved_id:
+            return None
+
+        client = DatabaseProvider.get_client()
+        if client is None:
+            return None
+        for table_name in ("user_ai_profile", "user_ai_profiles"):
+            try:
+                rows = (
+                    client.table(table_name)
+                    .select("*")
+                    .eq("user_id", resolved_id)
+                    .limit(1)
+                    .execute()
+                    .data
+                    or []
+                )
+                if rows:
+                    return rows[0]
+            except Exception:
+                continue
+        return None
+
+    def get_user_allergies(self, user_id: str) -> list[dict]:
+        resolved_id = self.resolve_user_id(user_id)
+        if not resolved_id:
+            return []
+
+        client = DatabaseProvider.get_client()
+        if client is None:
+            return []
+
+        try:
+            rows = (
+                client.table("allergies")
+                .select("*")
+                .eq("user_id", resolved_id)
+                .eq("is_active", True)
+                .limit(100)
+                .execute()
+                .data
+                or []
+            )
+            if rows:
+                return rows
+        except Exception:
+            pass
+
+        try:
+            links = (
+                client.table("user_allergies")
+                .select("*")
+                .eq("user_id", resolved_id)
+                .limit(100)
+                .execute()
+                .data
+                or []
+            )
+            allergy_ids = [str(row.get("allergy_id")) for row in links if row.get("allergy_id")]
+            if not allergy_ids:
+                return []
+            rows = (
+                client.table("allergies")
+                .select("*")
+                .in_("id", allergy_ids)
+                .limit(100)
+                .execute()
+                .data
+                or []
+            )
+            return rows
+        except Exception:
+            return []
+
+    def get_water_intake(self, user_id: str, target_date: str) -> float:
+        resolved_id = self.resolve_user_id(user_id)
+        if not resolved_id:
+            return 0.0
+
+        client = DatabaseProvider.get_client()
+        if client is None:
+            return 0.0
+
+        for table_name, amount_fields in (
+            ("water_logs", ("amount_ml", "water_ml", "volume_ml")),
+            ("nutrition_snapshots", ("water_ml", "total_water_ml")),
+        ):
+            try:
+                rows = (
+                    client.table(table_name)
+                    .select("*")
+                    .eq("user_id", resolved_id)
+                    .gte("logged_at" if table_name == "water_logs" else "snapshot_date", f"{target_date}T00:00:00")
+                    .limit(100)
+                    .execute()
+                    .data
+                    or []
+                )
+                total = 0.0
+                for row in rows:
+                    for field in amount_fields:
+                        if row.get(field) is not None:
+                            total += self._to_float(row.get(field))
+                            break
+                if total > 0:
+                    return round(total, 1)
+            except Exception:
+                continue
+        return 0.0
+
+    def get_current_meal_plan(self, user_id: str, target_date: str) -> dict:
+        resolved_id = self.resolve_user_id(user_id)
+        if not resolved_id:
+            return {"planned_meals": [], "completed_meals": []}
+
+        client = DatabaseProvider.get_client()
+        if client is None:
+            return {"planned_meals": [], "completed_meals": []}
+
+        try:
+            headers = (
+                client.table("meal_plan_headers")
+                .select("*")
+                .eq("user_id", resolved_id)
+                .lte("start_date", target_date)
+                .gte("end_date", target_date)
+                .limit(5)
+                .execute()
+                .data
+                or []
+            )
+            header_ids = [str(row.get("id")) for row in headers if row.get("id")]
+            if not header_ids:
+                return {"planned_meals": [], "completed_meals": []}
+            items = (
+                client.table("meal_plan_items")
+                .select("*")
+                .in_("meal_plan_id", header_ids)
+                .limit(100)
+                .execute()
+                .data
+                or []
+            )
+            names = self._meal_plan_item_names(items)
+            completed = [
+                name
+                for name, row in zip(names, items)
+                if row.get("is_completed") or row.get("completed_at")
+            ]
+            return {"planned_meals": names, "completed_meals": completed}
+        except Exception:
+            return {"planned_meals": [], "completed_meals": []}
+
+    def _meal_plan_item_names(self, items: list[dict]) -> list[str]:
+        if not items:
+            return []
+        client = DatabaseProvider.get_client()
+        if client is None:
+            return []
+
+        food_ids = [str(row.get("food_id")) for row in items if row.get("food_id")]
+        recipe_ids = [str(row.get("recipe_id")) for row in items if row.get("recipe_id")]
+        food_names: dict[str, str] = {}
+        recipe_names: dict[str, str] = {}
+        try:
+            if food_ids:
+                foods = client.table(self.settings.foods_table).select("*").in_("id", food_ids).execute().data or []
+                food_names = {str(row.get("id")): row.get("name_vi") or row.get("name_en") or row.get("name") for row in foods}
+        except Exception:
+            food_names = {}
+        try:
+            if recipe_ids:
+                recipes = client.table(self.settings.recipes_table).select("*").in_("id", recipe_ids).execute().data or []
+                recipe_names = {str(row.get("id")): row.get("title") or row.get("name") for row in recipes}
+        except Exception:
+            recipe_names = {}
+
+        names: list[str] = []
+        for row in items:
+            name = row.get("food_name") or row.get("recipe_name")
+            if not name and row.get("food_id"):
+                name = food_names.get(str(row.get("food_id")))
+            if not name and row.get("recipe_id"):
+                name = recipe_names.get(str(row.get("recipe_id")))
+            if not name:
+                name = row.get("meal_type") or "planned meal"
+            names.append(str(name))
+        return names
+
     def save_chat_session(
         self,
         user_id: str | None,
@@ -421,6 +612,76 @@ class UserRepository:
             return [self._normalize_macro_row(r) for r in rows]
         except Exception:
             return []
+
+    def list_recommendation_candidates(self, limit: int = 200) -> list[dict]:
+        client = DatabaseProvider.get_client()
+        if client is None:
+            return []
+
+        pool: list[dict] = []
+        recipe_rows: list[dict] = []
+        food_rows: list[dict] = []
+        try:
+            recipe_rows = (
+                client.table(self.settings.recipes_table)
+                .select("*")
+                .eq("is_active", True)
+                .limit(limit)
+                .execute()
+                .data
+                or []
+            )
+        except Exception:
+            try:
+                recipe_rows = client.table(self.settings.recipes_table).select("*").limit(limit).execute().data or []
+            except Exception:
+                recipe_rows = []
+
+        try:
+            food_rows = (
+                client.table(self.settings.foods_table)
+                .select("*")
+                .eq("is_active", True)
+                .limit(limit)
+                .execute()
+                .data
+                or []
+            )
+        except Exception:
+            try:
+                food_rows = client.table(self.settings.foods_table).select("*").limit(limit).execute().data or []
+            except Exception:
+                food_rows = []
+
+        recipe_rows = self._hydrate_recipe_rows(recipe_rows)
+        for row in recipe_rows:
+            pool.append(self._recommendation_candidate_from_row(row, source="recipe"))
+        for row in food_rows:
+            pool.append(self._recommendation_candidate_from_row(row, source="food"))
+
+        seen: set[str] = set()
+        unique: list[dict] = []
+        for item in pool:
+            name = str(item.get("name") or "").strip().lower()
+            key = str(item.get("id") or name)
+            if not name or key in seen:
+                continue
+            seen.add(key)
+            unique.append(item)
+            if len(unique) >= limit:
+                break
+        return unique
+
+    def _recommendation_candidate_from_row(self, row: dict, source: str) -> dict:
+        normalized = self._normalize_macro_row(row)
+        normalized["source"] = source
+        normalized["ingredients"] = row.get("ingredients") or row.get("ingredient_names")
+        normalized["ingredient_names"] = row.get("ingredient_names")
+        normalized["allergens"] = row.get("allergens")
+        normalized["allergen_keys"] = row.get("allergen_keys")
+        normalized["allergen_names"] = row.get("allergen_names")
+        normalized["tags"] = row.get("tags") or row.get("category")
+        return normalized
 
     def search_foods_by_name(self, keyword: str, limit: int = 5) -> list[dict]:
         query = (keyword or "").strip()

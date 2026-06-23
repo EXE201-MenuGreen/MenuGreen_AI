@@ -1,6 +1,8 @@
 ﻿from pydantic import BaseModel, Field
 from typing import Any, Literal
 
+from app.schemas.actions import ActionSuggestion
+
 SubscriptionTier = Literal["free", "saving", "energy", "performance"]
 
 
@@ -25,6 +27,11 @@ class ChatResponse(BaseModel):
     thread_id: str | None = None
     intent_confidence: float | None = None
     subscription_tier: SubscriptionTier = "free"
+    actions: list[ActionSuggestion] = Field(default_factory=list)
+    suggested_prompts: list[str] = Field(default_factory=list)
+    safety_flags: list[str] = Field(default_factory=list)
+    context_summary: dict[str, Any] = Field(default_factory=dict)
+    recommendation_refs: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class CrawlerNormalizeRequest(BaseModel):
