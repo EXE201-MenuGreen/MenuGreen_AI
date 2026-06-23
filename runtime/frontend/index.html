@@ -57,6 +57,9 @@
     textarea { min-height: 90px; resize: vertical; }
     .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+    .row4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .inline { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; }
+    .inline > * { flex: 1 1 180px; }
     .btn {
       border: 0;
       color: white;
@@ -69,8 +72,21 @@
       color: #174aa8;
       border: 1px solid #c8d9fb;
     }
+    .btn.warn { background: linear-gradient(90deg, #b54708, #d97706); }
     .status { font-size: 12px; margin-top: 6px; color: var(--warn); }
     .status.ok { color: var(--ok); }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 3px 8px;
+      border: 1px solid #c8d9fb;
+      border-radius: 999px;
+      color: #174aa8;
+      background: #eef5ff;
+      font-size: 12px;
+      margin: 2px 4px 2px 0;
+    }
     pre {
       margin: 0;
       white-space: pre-wrap;
@@ -99,8 +115,33 @@
     }
     .u { background: #eef4ff; }
     .a { background: #ebfbf4; }
+    .stream {
+      min-height: 74px;
+      max-height: 180px;
+      overflow: auto;
+      border: 1px dashed #b9c8df;
+      border-radius: 10px;
+      padding: 8px;
+      background: #fbfdff;
+      font-size: 13px;
+      white-space: pre-wrap;
+    }
+    .mini-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .mini {
+      border: 1px solid #dde5f4;
+      border-radius: 10px;
+      padding: 8px;
+      background: #f9fcff;
+      font-size: 12px;
+    }
     @media (max-width: 1024px) {
       .col-4, .col-6, .col-8 { grid-column: span 12; }
+      .row3, .row4 { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -109,10 +150,27 @@
   <h1>MenuGreen AI Capability Console</h1>
   <p class="sub">FE demo cho BE tích hợp: hiển thị đầy đủ endpoint AI + mẫu request/response.</p>
 
-  <div class="topbar">
-    <button class="btn ghost" id="btnHealth">Check /health</button>
-    <button class="btn ghost" id="btnDocs">Open /docs</button>
-    <button class="btn ghost" id="btnOpenApi">Open /openapi.json</button>
+  <div class="card col-12" style="margin-bottom:14px">
+    <h2>Runtime Connection</h2>
+    <div class="row3">
+      <div>
+        <label>API Base URL</label>
+        <input id="apiBase" placeholder="Để trống nếu chạy cùng origin, ví dụ http://127.0.0.1:8000" />
+      </div>
+      <div>
+        <label>X-AI-Runtime-Key</label>
+        <input id="runtimeKey" placeholder="Chỉ nhập nếu worker bật AI_RUNTIME_INTERNAL_KEY" />
+      </div>
+      <div>
+        <label>Quick Links</label>
+        <div class="topbar" style="margin:0">
+          <button class="btn ghost" id="btnHealth">Check /health</button>
+          <button class="btn ghost" id="btnDocs">Open /docs</button>
+          <button class="btn ghost" id="btnOpenApi">Open /openapi.json</button>
+        </div>
+      </div>
+    </div>
+    <div id="healthResult" class="status">Chưa check health</div>
   </div>
 
   <div class="grid">
@@ -130,24 +188,120 @@
       </div>
       <label>Message</label>
       <textarea id="message">Hôm nay tôi còn bao nhiêu kcal và gợi ý bữa trưa nhanh dưới 60k?</textarea>
-      <button class="btn" id="sendBtn">Gọi Chat</button>
+      <div class="row2">
+        <button class="btn" id="sendBtn">Gọi Chat</button>
+        <button class="btn ghost" id="streamBtn">Stream Chat SSE</button>
+      </div>
       <div id="chatStatus" class="status">Chưa gửi</div>
       <div class="chat" id="chatBox"></div>
+      <label>Stream output</label>
+      <div class="stream" id="streamBox">Chưa stream</div>
+      <div id="suggestedPrompts"></div>
     </section>
 
     <section class="card col-4">
-      <h2>2) Safety Notes</h2>
-      <p class="small">Response chat hiện đi qua safety layer trước khi trả về.</p>
-      <ul class="small">
-        <li>Chặn keyword y tế nguy hiểm</li>
-        <li>Giới hạn độ dài output</li>
-        <li>Cảnh báo ăn kiêng cực đoan</li>
-      </ul>
-      <div id="healthResult" class="status">Chưa check health</div>
+      <h2>2) Context Snapshot - GET /worker/context</h2>
+      <p class="small">Đọc profile, target, tracking, allergy, preference, meal plan hiện tại từ worker.</p>
+      <label>Date</label>
+      <input id="contextDate" type="date" />
+      <button class="btn" id="btnContext">Load Context</button>
+      <div id="contextStatus" class="status">Chưa load context</div>
+      <div class="mini-list" id="contextSummary"></div>
+    </section>
+
+    <section class="card col-12">
+      <h2>3) Recommendation Worker Endpoints</h2>
+      <p class="small">Test nhanh 6 mode mới: generate, safe, daily-menu, weekly-plan, budget-aware, smart-schedule.</p>
+      <div class="row4">
+        <div>
+          <label>Mode</label>
+          <select id="recMode">
+            <option value="generate">generate</option>
+            <option value="safe">safe</option>
+            <option value="daily-menu">daily-menu</option>
+            <option value="weekly-plan">weekly-plan</option>
+            <option value="budget-aware">budget-aware</option>
+            <option value="smart-schedule">smart-schedule</option>
+          </select>
+        </div>
+        <div>
+          <label>Meal slot</label>
+          <select id="recMealSlot">
+            <option value="">auto</option>
+            <option value="breakfast">breakfast</option>
+            <option value="lunch">lunch</option>
+            <option value="dinner">dinner</option>
+            <option value="snack">snack</option>
+            <option value="any">any</option>
+          </select>
+        </div>
+        <div>
+          <label>Date</label>
+          <input id="recDate" type="date" />
+        </div>
+        <div>
+          <label>Limit</label>
+          <input id="recLimit" type="number" value="5" min="1" max="50" />
+        </div>
+      </div>
+      <div class="row4">
+        <div>
+          <label>Budget VND</label>
+          <input id="recBudget" type="number" value="60000" min="0" />
+        </div>
+        <div>
+          <label>Max cook time min</label>
+          <input id="recTime" type="number" value="30" min="0" />
+        </div>
+        <div>
+          <label>Target calories</label>
+          <input id="recKcal" type="number" value="550" min="0" />
+        </div>
+        <div>
+          <label>Exclude food IDs</label>
+          <input id="recExclude" placeholder="id1,id2" />
+        </div>
+      </div>
+      <div class="row3" style="margin-top:8px">
+        <button class="btn" id="btnRecommendation">Run Recommendation</button>
+        <button class="btn ghost" id="btnRunAllRecs">Run All Modes</button>
+        <button class="btn ghost" id="btnSmokeNew">Smoke New Features</button>
+      </div>
+      <div id="recStatus" class="status">Chưa chạy recommendation</div>
+      <div class="mini-list" id="recCards"></div>
     </section>
 
     <section class="card col-6">
-      <h2>3) Feedback Capture - POST /api/ai/feedback</h2>
+      <h2>4) Action Execute - POST /api/ai/actions/execute</h2>
+      <div class="row2">
+        <div>
+          <label>Action type</label>
+          <select id="actionType">
+            <option value="generate_meal_plan">generate_meal_plan</option>
+            <option value="replace_food">replace_food</option>
+            <option value="budget_optimize">budget_optimize</option>
+            <option value="schedule_meal">schedule_meal</option>
+            <option value="show_recipe">show_recipe</option>
+            <option value="log_meal">log_meal</option>
+            <option value="ask_followup">ask_followup</option>
+          </select>
+        </div>
+        <div>
+          <label>Confirmed</label>
+          <select id="actionConfirmed">
+            <option value="false">false</option>
+            <option value="true">true</option>
+          </select>
+        </div>
+      </div>
+      <label>Payload JSON</label>
+      <textarea id="actionPayload">{"mode":"daily-menu","source":"frontend-console"}</textarea>
+      <button class="btn" id="btnAction">Execute Action</button>
+      <div id="actionStatus" class="status">Chưa execute action</div>
+    </section>
+
+    <section class="card col-6">
+      <h2>5) Feedback Capture - POST /api/ai/feedback</h2>
       <div class="row2">
         <div>
           <label>Feedback Type</label>
@@ -172,13 +326,13 @@
     </section>
 
     <section class="card col-6">
-      <h2>4) Nightly Curation - POST /api/ai/curation/nightly</h2>
+      <h2>6) Nightly Curation - POST /api/ai/curation/nightly</h2>
       <label>Limit events</label>
       <input id="curationLimit" type="number" value="200" min="1" max="2000" />
       <button class="btn" id="btnCuration">Run Curation</button>
       <div id="curationStatus" class="status">Chưa chạy</div>
 
-      <h2 style="margin-top:12px">5) Training Samples - GET/PATCH</h2>
+      <h2 style="margin-top:12px">7) Training Samples - GET/PATCH</h2>
       <div class="row2">
         <button class="btn ghost" id="btnListSamples">List Samples</button>
         <button class="btn ghost" id="btnApproveFirst">Approve First Pending</button>
@@ -187,7 +341,7 @@
     </section>
 
     <section class="card col-6">
-      <h2>6) Meal Plan 7 Days - POST /api/ai/meal-plans/7d</h2>
+      <h2>8) Meal Plan 7 Days - POST /api/ai/meal-plans/7d</h2>
       <div class="row3">
         <div>
           <label>Budget/day (VND)</label>
@@ -207,7 +361,7 @@
     </section>
 
     <section class="card col-6">
-      <h2>7) Admin Crawler Normalize/Ingest</h2>
+      <h2>9) Admin Crawler Normalize/Ingest</h2>
       <textarea id="crawlerRaw">[{"name":"Phở bò","description":"Món nước","ingredients":["300 g xương bò","120 g bánh phở"],"steps":["Ninh xương","Trụng bánh phở"]}]</textarea>
       <div class="row2">
         <button class="btn ghost" id="btnNormalize">Normalize</button>
@@ -245,15 +399,129 @@
     chatBox.scrollTop = chatBox.scrollHeight;
   }
 
+  function todayIso() {
+    const date = new Date();
+    date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+    return date.toISOString().slice(0, 10);
+  }
+
+  function apiUrl(path) {
+    const base = byId('apiBase').value.trim().replace(/\/+$/, '');
+    if (!base || /^https?:\/\//i.test(path)) return path;
+    return `${base}${path.startsWith('/') ? path : `/${path}`}`;
+  }
+
+  function requestHeaders(headers = {}) {
+    const next = new Headers(headers);
+    const key = byId('runtimeKey').value.trim();
+    if (key) next.set('X-AI-Runtime-Key', key);
+    return next;
+  }
+
+  function renderMiniList(containerId, items) {
+    const container = byId(containerId);
+    container.innerHTML = '';
+    items.forEach((item) => {
+      const card = document.createElement('div');
+      card.className = 'mini';
+      card.innerHTML = item;
+      container.appendChild(card);
+    });
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+  }
+
+  function numberOrNull(id) {
+    const value = byId(id).value;
+    if (value === '') return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function recommendationPayload() {
+    const exclude = byId('recExclude').value
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean);
+    return {
+      user_id: byId('userId').value || null,
+      date: byId('recDate').value || null,
+      budget_vnd: numberOrNull('recBudget'),
+      meal_slot: byId('recMealSlot').value || null,
+      max_cook_time_min: numberOrNull('recTime'),
+      target_calories: numberOrNull('recKcal'),
+      exclude_food_ids: exclude,
+      limit: Number(byId('recLimit').value || 5)
+    };
+  }
+
+  function renderPromptsAndActions(data) {
+    const prompts = data.suggested_prompts || [];
+    const actions = data.actions || [];
+    const html = [
+      ...prompts.map((prompt) => `<span class="pill">Prompt: ${escapeHtml(prompt)}</span>`),
+      ...actions.map((action) => `<span class="pill">Action: ${escapeHtml(action.type)} - ${escapeHtml(action.title)}</span>`)
+    ].join('');
+    byId('suggestedPrompts').innerHTML = html;
+  }
+
+  function renderRecommendations(data, mode) {
+    const items = data.items || [];
+    const cards = items.map((item, index) => {
+      const name = item.name || item.title || item.food_name || item.recipe_name || item.id || `Item ${index + 1}`;
+      const kcal = item.calories ?? item.calories_kcal ?? item.kcal ?? item.nutrition?.calories;
+      const price = item.price_vnd ?? item.estimated_cost_vnd ?? item.cost_vnd;
+      const mealType = item.meal_type || item.meal_slot || item.recommended_time || '';
+      const reasons = data.reasons?.[item.id] || item.reasons || item.reason || [];
+      const reasonText = Array.isArray(reasons) ? reasons.join(', ') : reasons;
+      return `
+        <strong>${escapeHtml(name)}</strong>
+        <div>${escapeHtml(mealType)} ${kcal ? `| ${escapeHtml(kcal)} kcal` : ''} ${price ? `| ${escapeHtml(price)} VND` : ''}</div>
+        <div>${escapeHtml(reasonText || 'Có trong response, xem raw để kiểm tra đầy đủ.')}</div>
+      `;
+    });
+    if (!cards.length) {
+      cards.push(`<strong>${escapeHtml(mode)}</strong><div>Không có item trả về. Xem raw response để kiểm tra safety_flags/excluded_items.</div>`);
+    }
+    renderMiniList('recCards', cards);
+  }
+
+  function parseSseBlock(block) {
+    let event = 'message';
+    const dataLines = [];
+    block.split(/\r?\n/).forEach((line) => {
+      if (line.startsWith('event:')) event = line.slice(6).trim();
+      if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
+    });
+    const dataText = dataLines.join('\n');
+    let data = dataText;
+    try { data = JSON.parse(dataText); } catch { data = { raw: dataText }; }
+    return { event, data };
+  }
+
   async function callApi(url, options = {}) {
-    const res = await fetch(url, options);
+    const fullUrl = apiUrl(url);
+    const res = await fetch(fullUrl, {
+      ...options,
+      headers: requestHeaders(options.headers)
+    });
     const text = await res.text();
     let data = {};
     try { data = JSON.parse(text); } catch { data = { raw: text }; }
-    raw.textContent = JSON.stringify({ url, status: res.status, data }, null, 2);
+    raw.textContent = JSON.stringify({ url: fullUrl, status: res.status, data }, null, 2);
     if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
     return data;
   }
+
+  byId('contextDate').value = todayIso();
+  byId('recDate').value = todayIso();
 
   byId('btnHealth').onclick = async () => {
     try {
@@ -264,8 +532,8 @@
     }
   };
 
-  byId('btnDocs').onclick = () => window.open('/docs', '_blank');
-  byId('btnOpenApi').onclick = () => window.open('/openapi.json', '_blank');
+  byId('btnDocs').onclick = () => window.open(apiUrl('/docs'), '_blank');
+  byId('btnOpenApi').onclick = () => window.open(apiUrl('/openapi.json'), '_blank');
 
   byId('sendBtn').onclick = async () => {
     const payload = {
@@ -281,9 +549,203 @@
         body: JSON.stringify(payload)
       });
       addBubble('assistant', data.response || '(no response)');
+      renderPromptsAndActions(data);
       setStatus('chatStatus', `Chat OK | intent=${data.intent} | source=${data.source}`, true);
     } catch (e) {
       setStatus('chatStatus', `Chat lỗi: ${e.message}`);
+    }
+  };
+
+  byId('streamBtn').onclick = async () => {
+    const payload = {
+      user_id: byId('userId').value || null,
+      thread_id: byId('threadId').value || null,
+      message: byId('message').value
+    };
+    const streamBox = byId('streamBox');
+    const events = [];
+    let buffer = '';
+    let assembled = '';
+    let finalPayload = null;
+    addBubble('user', payload.message);
+    streamBox.textContent = 'Đang kết nối SSE...';
+    setStatus('chatStatus', 'Đang stream /worker/chat/stream...');
+
+    try {
+      const endpoint = '/worker/chat/stream';
+      const res = await fetch(apiUrl(endpoint), {
+        method: 'POST',
+        headers: requestHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `HTTP ${res.status}`);
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      streamBox.textContent = '';
+
+      const consumeBlock = (block) => {
+        if (!block.trim()) return;
+        const item = parseSseBlock(block);
+        events.push(item);
+        if (item.event === 'delta') {
+          assembled += item.data.text || item.data.raw || '';
+          streamBox.textContent = assembled;
+          streamBox.scrollTop = streamBox.scrollHeight;
+        } else if (item.event === 'actions') {
+          streamBox.textContent += `\n\n[actions] ${(item.data.items || []).map((x) => x.type).join(', ')}`;
+        } else if (item.event === 'safety') {
+          streamBox.textContent += `\n\n[safety] ${(item.data.flags || []).join(', ')}`;
+        } else if (item.event === 'final') {
+          finalPayload = item.data;
+          renderPromptsAndActions(finalPayload);
+        } else if (item.event === 'error') {
+          throw new Error(item.data.detail || item.data.raw || 'SSE error');
+        }
+      };
+
+      while (true) {
+        const { value, done } = await reader.read();
+        buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+        const parts = buffer.split(/\r?\n\r?\n/);
+        buffer = parts.pop() || '';
+        parts.forEach(consumeBlock);
+        if (done) break;
+      }
+      consumeBlock(buffer);
+
+      addBubble('assistant', finalPayload?.response || assembled || '(stream done)');
+      raw.textContent = JSON.stringify({ url: apiUrl('/worker/chat/stream'), status: res.status, events }, null, 2);
+      setStatus('chatStatus', `Stream OK | events=${events.map((x) => x.event).join(' -> ')}`, true);
+    } catch (e) {
+      setStatus('chatStatus', `Stream lỗi: ${e.message}`);
+    }
+  };
+
+  byId('btnContext').onclick = async () => {
+    try {
+      const params = new URLSearchParams({ user_id: byId('userId').value });
+      if (byId('contextDate').value) params.set('date', byId('contextDate').value);
+      const data = await callApi(`/worker/context?${params.toString()}`);
+      const profile = data.user_profile || {};
+      const target = data.nutritional_target || {};
+      const actual = data.actual_intake_today || {};
+      const remain = data.remaining_budget_today || {};
+      const safety = data.safety_and_allergies || {};
+      const quality = data.data_quality || {};
+      renderMiniList('contextSummary', [
+        `<strong>User</strong><div>${escapeHtml(profile.full_name || data.user_id)}</div><div>${escapeHtml(profile.goal_mode || 'goal chưa có')}</div>`,
+        `<strong>Target</strong><div>${target.calories_kcal || 0} kcal | P ${target.protein_g || 0}g | C ${target.carbs_g || 0}g | F ${target.fat_g || 0}g</div>`,
+        `<strong>Actual today</strong><div>${actual.calories_kcal || 0} kcal | water ${actual.water_ml || 0}ml</div>`,
+        `<strong>Remaining</strong><div>${remain.calories_kcal || 0} kcal | protein ${remain.protein_g || 0}g</div>`,
+        `<strong>Safety</strong><div>Risk: ${escapeHtml(safety.allergy_risk_level || 'None')}</div><div>${escapeHtml((safety.allergen_names || []).join(', ') || 'No active allergies')}</div>`,
+        `<strong>Data quality</strong><div>Missing: ${escapeHtml((quality.missing_sources || []).join(', ') || 'none')}</div><div>${escapeHtml((quality.warnings || []).join(', ') || 'no warnings')}</div>`
+      ]);
+      setStatus('contextStatus', `Context OK: ${data.target_date}`, true);
+    } catch (e) {
+      setStatus('contextStatus', `Context lỗi: ${e.message}`);
+    }
+  };
+
+  byId('btnRecommendation').onclick = async () => {
+    const mode = byId('recMode').value;
+    try {
+      const data = await callApi(`/api/ai/recommendations/${mode}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(recommendationPayload())
+      });
+      renderRecommendations(data, mode);
+      setStatus('recStatus', `${mode} OK: items=${(data.items || []).length}, excluded=${(data.excluded_items || []).length}`, true);
+    } catch (e) {
+      setStatus('recStatus', `${mode} lỗi: ${e.message}`);
+    }
+  };
+
+  byId('btnRunAllRecs').onclick = async () => {
+    const modes = ['generate', 'safe', 'daily-menu', 'weekly-plan', 'budget-aware', 'smart-schedule'];
+    const summary = [];
+    setStatus('recStatus', 'Đang chạy toàn bộ recommendation modes...');
+    try {
+      for (const mode of modes) {
+        const data = await callApi(`/api/ai/recommendations/${mode}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...recommendationPayload(), limit: mode === 'weekly-plan' ? 21 : recommendationPayload().limit })
+        });
+        summary.push({
+          mode,
+          items: (data.items || []).length,
+          excluded: (data.excluded_items || []).length,
+          safety_flags: data.safety_flags || []
+        });
+      }
+      renderMiniList('recCards', summary.map((x) => `
+        <strong>${escapeHtml(x.mode)}</strong>
+        <div>items=${x.items} | excluded=${x.excluded}</div>
+        <div>${escapeHtml(x.safety_flags.join(', ') || 'no safety flags')}</div>
+      `));
+      raw.textContent = JSON.stringify({ recommendation_smoke: summary }, null, 2);
+      setStatus('recStatus', `Run all OK: ${summary.length} modes`, true);
+    } catch (e) {
+      setStatus('recStatus', `Run all lỗi: ${e.message}`);
+    }
+  };
+
+  byId('btnSmokeNew').onclick = async () => {
+    const result = {};
+    setStatus('recStatus', 'Đang smoke test context + recommendations + action...');
+    try {
+      const params = new URLSearchParams({ user_id: byId('userId').value, date: byId('recDate').value || todayIso() });
+      result.context = await callApi(`/worker/context?${params.toString()}`);
+      for (const mode of ['safe', 'daily-menu', 'budget-aware', 'smart-schedule']) {
+        result[mode] = await callApi(`/api/ai/recommendations/${mode}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(recommendationPayload())
+        });
+      }
+      result.action = await callApi('/api/ai/actions/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: byId('userId').value,
+          type: 'ask_followup',
+          confirmed: false,
+          payload: { source: 'frontend-smoke', question: byId('message').value }
+        })
+      });
+      renderMiniList('recCards', Object.entries(result).map(([key, value]) => `
+        <strong>${escapeHtml(key)}</strong>
+        <div>${Array.isArray(value.items) ? `items=${value.items.length}` : escapeHtml(value.status || value.target_date || 'OK')}</div>
+      `));
+      raw.textContent = JSON.stringify(result, null, 2);
+      setStatus('recStatus', 'Smoke new features OK', true);
+    } catch (e) {
+      setStatus('recStatus', `Smoke lỗi: ${e.message}`);
+    }
+  };
+
+  byId('btnAction').onclick = async () => {
+    try {
+      let payload = {};
+      if (byId('actionPayload').value.trim()) payload = JSON.parse(byId('actionPayload').value);
+      const data = await callApi('/api/ai/actions/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: byId('userId').value,
+          type: byId('actionType').value,
+          confirmed: byId('actionConfirmed').value === 'true',
+          payload
+        })
+      });
+      setStatus('actionStatus', `Action ${data.status}: ${data.action}`, data.status === 'completed' || data.status === 'needs_confirmation');
+    } catch (e) {
+      setStatus('actionStatus', `Action lỗi: ${e.message}`);
     }
   };
 

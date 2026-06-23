@@ -129,6 +129,30 @@ Result:
 
 Note: global Python did not have `pytest`; tests were run with the repo-local `.venv`.
 
+## Frontend console update
+
+Updated `runtime/frontend/index.html` so the RAG runtime can be tested directly without switching to MenuGreenSystem.
+
+Added UI coverage for:
+
+- Runtime connection controls: optional API base URL and `X-AI-Runtime-Key`.
+- `/worker/context` context snapshot with profile, target, actual intake, remaining budget, safety/allergy, and data quality summary cards.
+- `/worker/chat/stream` SSE streaming chat with event parsing for `start`, `delta`, `actions`, `safety`, `final`, `done`, and `error`.
+- `/api/ai/recommendations/{mode}` console for `generate`, `safe`, `daily-menu`, `weekly-plan`, `budget-aware`, and `smart-schedule`.
+- `/api/ai/actions/execute` console for the basic action schema.
+- One-click smoke test for context + safe/daily/budget/schedule recommendation + action.
+
+Browser verification run against `http://127.0.0.1:8000/`:
+
+- Page loaded with all new panels and no missing DOM IDs.
+- `/health` button returned `Health OK`.
+- `/worker/context` button returned `200` and rendered six context summary cards.
+- Recommendation `generate` returned `200` with five items rendered.
+- Action execute returned `needs_confirmation` for `generate_meal_plan`.
+- Streaming chat returned `start -> delta -> delta -> delta -> actions -> final -> done`.
+- Smoke new features returned OK for context, safe, daily-menu, budget-aware, smart-schedule, and action.
+- Run all recommendation modes returned OK for all six modes; `weekly-plan` returned 21 items.
+
 ## Deferred work
 
 - Link MenuGreenSystem public APIs to these new worker endpoints.
