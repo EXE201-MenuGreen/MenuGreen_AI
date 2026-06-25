@@ -133,6 +133,13 @@ class CoachService:
             "an j",
             "nen an gi",
             "mon gi",
+            "recommend",
+            "recommend mon",
+            "recommend do an",
+            "rcm",
+            "rcm mon",
+            "de xuat mon",
+            "tu van mon",
             "muon an",
             "toi muon an",
             "thich an",
@@ -379,7 +386,19 @@ class CoachService:
         if has_weather_food_signal:
             return "meal_plan"
         if has_meal_signal and any(
-            token in normalized_text for token in ("an gi", "nen an gi", "goi y", "co mon nao", "muon an", "thich an")
+            token in normalized_text
+            for token in (
+                "an gi",
+                "nen an gi",
+                "goi y",
+                "co mon nao",
+                "muon an",
+                "thich an",
+                "recommend",
+                "rcm",
+                "de xuat mon",
+                "tu van mon",
+            )
         ):
             return "meal_plan"
         if has_log_signal:
@@ -693,13 +712,14 @@ class CoachService:
         prefixes = [
             r"^(công thức|cong thuc|cách nấu|cach nau|làm|lam|nấu|nau)\s+",
             r"^(tìm|tim|gợi ý|goi y|tra cứu|tra cuu)\s+(món|mon|công thức|cong thuc|recipe)\s+",
+            r"^(recommend|rcm)\s+(món|mon|công thức|cong thuc|recipe)?\s*",
             r"^(gợi ý|goi y|tìm|tim)\s+",
         ]
         for pattern in prefixes:
             cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE).strip()
 
         cleaned = re.sub(
-            r"\b(công thức|cong thuc|cách nấu|cach nau|recipe|món|mon|nấu|nau|làm|lam|tìm|tim|gợi ý|goi y|cho|của|cua|về|ve)\b",
+            r"\b(công thức|cong thuc|cách nấu|cach nau|recipe|món|mon|nấu|nau|làm|lam|tìm|tim|gợi ý|goi y|recommend|rcm|cho|của|cua|về|ve)\b",
             " ",
             cleaned,
             flags=re.IGNORECASE,
@@ -836,10 +856,10 @@ class CoachService:
         food_candidates: list[dict],
     ) -> bool:
         return (
-            self.settings.gemini_query_rewrite_enabled
-            and self.gemini_pool.is_available()
-            and not recipe_candidates
+            not recipe_candidates
             and not food_candidates
+            and self.settings.gemini_query_rewrite_enabled
+            and self.gemini_pool.is_available()
             and self._is_hard_query(message, query)
         )
 
@@ -1342,6 +1362,8 @@ class CoachService:
                 intent = contextual_intent
             elif heuristic_intent == "meal_plan" and intent in ("general", "recipe_search", "nutrition_calc"):
                 intent = "meal_plan"
+            elif heuristic_intent == "recipe_search" and intent in ("general", "meal_plan", "nutrition_calc"):
+                intent = "recipe_search"
             response_text, route_flags = self._compose_contextual_response(
                 intent,
                 context,
@@ -1433,7 +1455,7 @@ class CoachService:
             if self._is_vague_food_request(message) and conversation_history:
                 query = last_recommended_name or query
 
-            hybrid_flags: list[str] = []
+            hybrid_flags: list[str] = ["recipe-detail"]
             display_query = query if query else (message or "").strip()
             recipe_candidates = self.repo.search_recipes_by_name(query, limit=5)
             food_candidates = self.repo.search_foods_by_name(query, limit=5)
@@ -1517,6 +1539,7 @@ class CoachService:
             remain_protein = remaining.get("protein_g", 0)
             remain_carbs = remaining.get("carbs_g", 0)
             remain_fat = remaining.get("fat_g", 0)
+            dish_only_request = self._is_dish_only_recommendation(message)
             has_daily_target = any(
                 float(remaining.get(field, 0) or 0) > 0
                 for field in ("calories_kcal", "protein_g", "carbs_g", "fat_g")
@@ -1526,6 +1549,8 @@ class CoachService:
             weather_items, weather_profile = self._find_weather_meal_items(context, message, limit=4)
 
             if weather_items and weather_profile:
+                if dish_only_request:
+                    return self._dish_only_response(weather_items), ["dish-only"]
                 weather = weather_profile.get("weather")
                 weather_label = {
                     "hot": "trời nắng nóng",
@@ -1572,6 +1597,8 @@ class CoachService:
                     )
 
             if constrained_items:
+                if dish_only_request:
+                    return self._dish_only_response(constrained_items), ["dish-only"]
                 slot_label = self._meal_slot_label(constraints.get("meal_slot"))
                 budget_vnd = constraints.get("budget_vnd")
                 time_limit_min = constraints.get("time_limit_min")
@@ -1666,6 +1693,8 @@ class CoachService:
                     limit=3,
                 )
             if suggestions:
+                if dish_only_request:
+                    return self._dish_only_response(suggestions), [*route_flags, "dish-only"]
                 meal_slots = ("Sáng", "Trưa", "Tối")
                 lines: list[str] = []
                 total_kcal = 0.0
@@ -1702,7 +1731,7 @@ class CoachService:
                 )
 
             gemini_fallback = None
-            if self._should_try_gemini_fallback(message, None):
+            if not dish_only_request and self._should_try_gemini_fallback(message, None):
                 gemini_fallback = self._generate_recipe_fallback_with_gemini(message, context)
             if gemini_fallback:
                 return gemini_fallback, ["gemini-fallback"]
@@ -1719,6 +1748,69 @@ class CoachService:
             "Mình đang tập trung vào món ăn, dinh dưỡng, thực đơn và truy vấn công thức.",
             [],
         )
+
+    @staticmethod
+    def _is_dish_only_recommendation(message: str) -> bool:
+        text = CoachService._normalize_match_text(message)
+        if not text:
+            return False
+
+        recipe_signals = (
+            "cong thuc",
+            "cach nau",
+            "cach lam",
+            "nguyen lieu",
+            "nau sao",
+            "recipe",
+        )
+        plan_signals = (
+            "thuc don",
+            "meal plan",
+            "ke hoach bua an",
+            "3 bua",
+            "ba bua",
+            "7 ngay",
+            "mot tuan",
+            "hang tuan",
+        )
+        recommendation_signals = (
+            "recommend",
+            "rcm",
+            "goi y mon",
+            "goi y bua",
+            "de xuat mon",
+            "tu van mon",
+            "an gi",
+            "nen an gi",
+            "mon nao",
+            "co mon nao",
+            "muon an",
+            "thich an",
+        )
+        return (
+            any(signal in text for signal in recommendation_signals)
+            and not any(signal in text for signal in recipe_signals)
+            and not any(signal in text for signal in plan_signals)
+        )
+
+    @staticmethod
+    def _dish_only_response(items: list[dict]) -> str:
+        options: list[str] = []
+        for item in items[:3]:
+            name = str(item.get("name") or "").strip()
+            if not name:
+                continue
+            raw_kcal = item.get("calories_kcal")
+            try:
+                kcal_value = float(raw_kcal)
+                kcal = f"{kcal_value:.1f}".rstrip("0").rstrip(".")
+            except (TypeError, ValueError):
+                kcal = "chưa rõ"
+            options.append(f"{name} ({kcal} kcal)")
+
+        if not options:
+            return "Mình chưa tìm thấy món phù hợp trong dữ liệu hiện tại."
+        return f"Mình gợi ý {len(options)} món: {'; '.join(options)}."
 
     @staticmethod
     def _format_recipe_detail(row: dict) -> str:
