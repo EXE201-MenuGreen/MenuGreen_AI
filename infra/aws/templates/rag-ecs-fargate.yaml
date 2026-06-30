@@ -1,0 +1,363 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: MenuGreen RAG runtime on ECS Fargate behind an ALB.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: menugreen-rag
+  EnvironmentName:
+    Type: String
+    Default: prod
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  AlbSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+  ServiceSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+  AssignPublicIp:
+    Type: String
+    Default: ENABLED
+    AllowedValues:
+      - ENABLED
+      - DISABLED
+  DbSecurityGroupId:
+    Type: String
+    Default: ""
+  AllowedIngressCidr:
+    Type: String
+    Default: 0.0.0.0/0
+  ContainerImage:
+    Type: String
+  ContainerPort:
+    Type: Number
+    Default: 8000
+  DesiredCount:
+    Type: Number
+    Default: 1
+  TaskCpu:
+    Type: String
+    Default: "1024"
+    AllowedValues:
+      - "256"
+      - "512"
+      - "1024"
+      - "2048"
+      - "4096"
+  TaskMemory:
+    Type: String
+    Default: "2048"
+  LogRetentionDays:
+    Type: Number
+    Default: 14
+  HealthCheckPath:
+    Type: String
+    Default: /health
+  AcmCertificateArn:
+    Type: String
+    Default: ""
+  PostgresUrlSecretArn:
+    Type: String
+  GoogleApiKeySecretArn:
+    Type: String
+    Default: ""
+  GoogleApiKeysSecretArn:
+    Type: String
+    Default: ""
+  AiRuntimeInternalKeySecretArn:
+    Type: String
+    Default: ""
+  Debug:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+  ServeFrontend:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+  IntentModelDir:
+    Type: String
+    Default: models/intent_onnx
+  GeminiQueryRewriteEnabled:
+    Type: String
+    Default: "true"
+    AllowedValues:
+      - "true"
+      - "false"
+  GeminiResponseFallbackEnabled:
+    Type: String
+    Default: "true"
+    AllowedValues:
+      - "true"
+      - "false"
+
+Conditions:
+  HasCertificate: !Not [!Equals [!Ref AcmCertificateArn, ""]]
+  NoCertificate: !Equals [!Ref AcmCertificateArn, ""]
+  HasDbSecurityGroup: !Not [!Equals [!Ref DbSecurityGroupId, ""]]
+  HasGoogleApiKeySecret: !Not [!Equals [!Ref GoogleApiKeySecretArn, ""]]
+  HasGoogleApiKeysSecret: !Not [!Equals [!Ref GoogleApiKeysSecretArn, ""]]
+  HasInternalKeySecret: !Not [!Equals [!Ref AiRuntimeInternalKeySecretArn, ""]]
+
+Resources:
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "${ProjectName}-${EnvironmentName}"
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/${ProjectName}/${EnvironmentName}"
+      RetentionInDays: !Ref LogRetentionDays
+
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "${ProjectName}-${EnvironmentName} ALB ingress"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Ref AllowedIngressCidr
+        - !If
+          - HasCertificate
+          - IpProtocol: tcp
+            FromPort: 443
+            ToPort: 443
+            CidrIp: !Ref AllowedIngressCidr
+          - !Ref AWS::NoValue
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  ServiceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "${ProjectName}-${EnvironmentName} ECS service access"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref ContainerPort
+          ToPort: !Ref ContainerPort
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  DbIngressFromService:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: HasDbSecurityGroup
+    Properties:
+      GroupId: !Ref DbSecurityGroupId
+      IpProtocol: tcp
+      FromPort: 5432
+      ToPort: 5432
+      SourceSecurityGroupId: !Ref ServiceSecurityGroup
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Type: application
+      SecurityGroups:
+        - !Ref AlbSecurityGroup
+      Subnets: !Ref AlbSubnetIds
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VpcId
+      Port: !Ref ContainerPort
+      Protocol: HTTP
+      TargetType: ip
+      HealthCheckEnabled: true
+      HealthCheckPath: !Ref HealthCheckPath
+      HealthCheckProtocol: HTTP
+      Matcher:
+        HttpCode: 200-399
+
+  HttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: NoCertificate
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  HttpRedirectListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: HasCertificate
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: redirect
+          RedirectConfig:
+            Protocol: HTTPS
+            Port: "443"
+            Host: "#{host}"
+            Path: "/#{path}"
+            Query: "#{query}"
+            StatusCode: HTTP_301
+
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: HasCertificate
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref AcmCertificateArn
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ProjectName}-${EnvironmentName}-exec"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: !Sub "${ProjectName}-${EnvironmentName}-secret-access"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - kms:Decrypt
+                Resource:
+                  - !Ref PostgresUrlSecretArn
+                  - !If [HasGoogleApiKeySecret, !Ref GoogleApiKeySecretArn, !Ref AWS::NoValue]
+                  - !If [HasGoogleApiKeysSecret, !Ref GoogleApiKeysSecretArn, !Ref AWS::NoValue]
+                  - !If [HasInternalKeySecret, !Ref AiRuntimeInternalKeySecretArn, !Ref AWS::NoValue]
+
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ProjectName}-${EnvironmentName}-task"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${ProjectName}-${EnvironmentName}"
+      Cpu: !Ref TaskCpu
+      Memory: !Ref TaskMemory
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      RuntimePlatform:
+        CpuArchitecture: X86_64
+        OperatingSystemFamily: LINUX
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: runtime
+          Image: !Ref ContainerImage
+          Essential: true
+          PortMappings:
+            - ContainerPort: !Ref ContainerPort
+              Protocol: tcp
+          Environment:
+            - Name: PORT
+              Value: !Sub "${ContainerPort}"
+            - Name: DEBUG
+              Value: !Ref Debug
+            - Name: SERVE_FRONTEND
+              Value: !Ref ServeFrontend
+            - Name: INTENT_MODEL_DIR
+              Value: !Ref IntentModelDir
+            - Name: GEMINI_QUERY_REWRITE_ENABLED
+              Value: !Ref GeminiQueryRewriteEnabled
+            - Name: GEMINI_RESPONSE_FALLBACK_ENABLED
+              Value: !Ref GeminiResponseFallbackEnabled
+          Secrets:
+            - Name: POSTGRES_URL
+              ValueFrom: !Ref PostgresUrlSecretArn
+            - !If
+              - HasGoogleApiKeySecret
+              - Name: GOOGLE_API_KEY
+                ValueFrom: !Ref GoogleApiKeySecretArn
+              - !Ref AWS::NoValue
+            - !If
+              - HasGoogleApiKeysSecret
+              - Name: GOOGLE_API_KEYS
+                ValueFrom: !Ref GoogleApiKeysSecretArn
+              - !Ref AWS::NoValue
+            - !If
+              - HasInternalKeySecret
+              - Name: AI_RUNTIME_INTERNAL_KEY
+                ValueFrom: !Ref AiRuntimeInternalKeySecretArn
+              - !Ref AWS::NoValue
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: runtime
+
+  Service:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub "${ProjectName}-${EnvironmentName}"
+      Cluster: !Ref Cluster
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      TaskDefinition: !Ref TaskDefinition
+      HealthCheckGracePeriodSeconds: 60
+      DeploymentConfiguration:
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      LoadBalancers:
+        - ContainerName: runtime
+          ContainerPort: !Ref ContainerPort
+          TargetGroupArn: !Ref TargetGroup
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: !Ref AssignPublicIp
+          SecurityGroups:
+            - !Ref ServiceSecurityGroup
+          Subnets: !Ref ServiceSubnetIds
+
+Outputs:
+  ClusterName:
+    Value: !Ref Cluster
+  ServiceName:
+    Value: !Sub "${ProjectName}-${EnvironmentName}"
+  LoadBalancerDnsName:
+    Value: !GetAtt LoadBalancer.DNSName
+  ServiceUrl:
+    Value: !If
+      - HasCertificate
+      - !Sub "https://${LoadBalancer.DNSName}"
+      - !Sub "http://${LoadBalancer.DNSName}"
+  LogGroupName:
+    Value: !Ref LogGroup
+  ServiceSecurityGroupId:
+    Value: !Ref ServiceSecurityGroup
