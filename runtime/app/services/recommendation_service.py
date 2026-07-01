@@ -182,9 +182,11 @@ class RecommendationService:
         if not rows:
             return []
 
+        target_date = request.date or date.today().isoformat()
+
         if mode == "daily-menu":
             selected = list(islice(cycle(rows), 3))
-            return [self._to_item(row, meal_slot=slot) for row, slot in zip(selected, self.SLOT_SEQUENCE)]
+            return [self._to_item(row, meal_slot=slot, plan_date=target_date) for row, slot in zip(selected, self.SLOT_SEQUENCE)]
 
         if mode == "weekly-plan":
             start = date.fromisoformat(request.date) if request.date else date.today()
@@ -204,10 +206,11 @@ class RecommendationService:
                     row,
                     meal_slot=slot or self.SLOT_SEQUENCE[index % 3],
                     recommended_time=self.SLOT_TIMES.get(slot or self.SLOT_SEQUENCE[index % 3]),
+                    plan_date=target_date,
                 )
                 for index, row in enumerate(selected)
             ]
-        return [self._to_item(row) for row in selected]
+        return [self._to_item(row, plan_date=target_date) for row in selected]
 
     def _to_item(
         self,
@@ -217,6 +220,20 @@ class RecommendationService:
         recommended_time: str | None = None,
     ) -> RecommendationItem:
         total_time = self._to_float(row.get("total_time_min")) or self._to_float(row.get("prep_time_min")) + self._to_float(row.get("cook_time_min"))
+        effective_slot = meal_slot or row.get("meal_type")
+        if recommended_time is None and effective_slot:
+            slot_normalized = str(effective_slot).lower().strip()
+            if "breakfast" in slot_normalized or "sáng" in slot_normalized:
+                recommended_time = self.SLOT_TIMES["breakfast"]
+            elif "lunch" in slot_normalized or "trưa" in slot_normalized:
+                recommended_time = self.SLOT_TIMES["lunch"]
+            elif "dinner" in slot_normalized or "tối" in slot_normalized:
+                recommended_time = self.SLOT_TIMES["dinner"]
+            elif "snack" in slot_normalized or "xế" in slot_normalized or "phụ" in slot_normalized:
+                recommended_time = self.SLOT_TIMES["snack"]
+            else:
+                recommended_time = self.SLOT_TIMES.get(slot_normalized)
+
         return RecommendationItem(
             id=str(row.get("id")) if row.get("id") else None,
             source=str(row.get("source") or row.get("_source") or "food"),
@@ -234,6 +251,7 @@ class RecommendationService:
             cook_time_min=int(self._to_float(row.get("cook_time_min"))) if row.get("cook_time_min") is not None else None,
             total_time_min=int(total_time) if total_time else None,
             default_serving_g=self._to_float(row.get("default_serving_g")) or None,
+            instructions=row.get("instructions"),
         )
 
     def _reasons(

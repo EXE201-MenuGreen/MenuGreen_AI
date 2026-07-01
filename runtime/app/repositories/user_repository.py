@@ -664,9 +664,10 @@ class UserRepository:
         for item in pool:
             name = str(item.get("name") or "").strip().lower()
             key = str(item.get("id") or name)
-            if not name or key in seen:
+            if not name or key in seen or name in seen:
                 continue
             seen.add(key)
+            seen.add(name)
             unique.append(item)
             if len(unique) >= limit:
                 break
@@ -905,7 +906,7 @@ class UserRepository:
                 hydrated.append(row)
                 continue
             merged = dict(row)
-            for field in ("calories_kcal", "protein_g", "carbs_g", "fat_g", "estimated_price_vnd"):
+            for field in ("calories_kcal", "protein_g", "carbs_g", "fat_g", "estimated_price_vnd", "default_serving_g", "DefaultServingG"):
                 if merged.get(field) in (None, 0, 0.0, ""):
                     merged[field] = linked_food.get(field)
             hydrated.append(merged)
@@ -939,7 +940,7 @@ class UserRepository:
             "protein_g": round(protein, 1),
             "carbs_g": round(carbs, 1),
             "fat_g": round(fat, 1),
-            "default_serving_g": row.get("default_serving_g"),
+            "default_serving_g": row.get("default_serving_g") or row.get("DefaultServingG"),
         }
 
     def suggest_meal_plan_items(

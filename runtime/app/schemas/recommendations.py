@@ -39,6 +39,7 @@ class RecommendationItem(BaseModel):
     cook_time_min: int | None = None
     total_time_min: int | None = None
     default_serving_g: float | None = None
+    instructions: list[str] | str | None = None
 
 
 class RecommendationScore(BaseModel):
