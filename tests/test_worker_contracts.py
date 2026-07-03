@@ -146,7 +146,10 @@ class FakeCoachService:
             ],
             suggested_prompts=["Tôi còn bao nhiêu kcal?"],
             safety_flags=["contract-safe"],
-            context_summary={"remaining_totals": {"calories_kcal": 1100}},
+            context_summary={
+                "remaining_totals": {"calories_kcal": 1100},
+                "request_context": request.context,
+            },
         )
 
 
@@ -294,6 +297,25 @@ def test_worker_chat_backward_compatible_fields(client):
     assert body["intent"] == "meal_plan"
     assert body["actions"][0]["type"] == "generate_meal_plan"
     assert body["safety_flags"] == ["contract-safe"]
+
+
+def test_worker_chat_accepts_structured_system_context(client):
+    response = client.post(
+        "/worker/chat",
+        json={
+            "message": "Hôm nay tôi cần nạp bao nhiêu calo?",
+            "user_id": "user-1",
+            "context": {
+                "health_profile": {"target_calories": 1800, "tdee_kcal": 2300},
+                "recent_nutrition": {"snapshot_date": "2026-07-03", "total_calories": 600},
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    request_context = response.json()["context_summary"]["request_context"]
+    assert request_context["health_profile"]["target_calories"] == 1800
+    assert request_context["recent_nutrition"]["total_calories"] == 600
 
 
 def test_worker_chat_stream_event_order(client):

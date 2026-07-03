@@ -161,3 +161,25 @@ Browser verification run against `http://127.0.0.1:8000/`:
 - Add production metrics/logging for recommendation/context/safety failures.
 - Add DB integration tests behind an env flag.
 - Add stronger allergy matching from normalized ingredient/allergen join tables if the production schema exposes those relationships consistently.
+
+## 2026-07-03 calorie-context integration fix
+
+User feedback exposed a context gap for questions such as `Hôm nay tôi cần nạp bao nhiêu calo?`.
+
+Implemented:
+
+- Added optional structured `context` to `POST /worker/chat`; existing clients remain compatible.
+- MenuGreenSystem now sends its current profile, HealthProfile, allergies, and today's NutritionSnapshot in that field.
+- RAG prioritizes the System HealthProfile target over its local DB fallback.
+- HealthProfile fields are canonicalized from both EF/PostgreSQL PascalCase and snake_case names.
+- If a stored target is absent, RAG derives BMR, TDEE, target calories, and macros with the same formula and activity/goal mappings as `HealthProfileMetricsCalculator`.
+- Added deterministic handling for daily target-calorie questions, including target, consumed, and remaining calories. This path does not let Gemini invent the value.
+- Added an intent guard so a confident but incorrect ONNX `general` prediction cannot override an explicit calorie calculation question.
+- Old NutritionSnapshots are no longer treated as today's intake.
+
+Verification:
+
+- `python -m compileall runtime/app`: passed.
+- `\.venv\Scripts\python.exe -m pytest tests -q`: `21 passed`.
+- `dotnet restore backend/MenuGreen.sln`: passed.
+- `dotnet build backend/MenuGreen.sln --no-restore`: passed with zero errors; the first full build emitted three pre-existing warnings.

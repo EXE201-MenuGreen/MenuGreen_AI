@@ -4,6 +4,7 @@ from datetime import date, datetime
 from typing import Any
 
 from app.repositories.user_repository import UserRepository
+from app.services.context_builder import apply_system_nutrition_metrics
 from app.schemas.context import (
     ActualIntakeContext,
     CurrentMealPlanContext,
@@ -73,6 +74,7 @@ class ContextService:
         profile = self.repo.get_profile(user_id) or {}
         if not profile:
             missing_sources.append("profile")
+        profile, target_source = apply_system_nutrition_metrics(profile)
 
         ai_profile = self.repo.get_ai_profile(user_id) or {}
         if not ai_profile:
@@ -95,6 +97,7 @@ class ContextService:
             protein_g=self._to_float(profile.get("target_protein_g")),
             carbs_g=self._to_float(profile.get("target_carbs_g")),
             fat_g=self._to_float(profile.get("target_fat_g")),
+            calculation_source=target_source,
         )
         remaining = RemainingBudgetContext(
             calories_kcal=max(round(target.calories_kcal - actual.calories_kcal, 1), 0),
@@ -122,6 +125,8 @@ class ContextService:
 
         if target.calories_kcal <= 0:
             warnings.append("Missing target calories; recommendation scoring will use defaults.")
+        elif target_source == "system_formula_v1":
+            warnings.append("Target calories were derived with the MenuGreenSystem health formula because no stored target was available.")
 
         return WorkerContextResponse(
             user_id=user_id,

@@ -28,6 +28,8 @@ class NutritionalTargetContext(BaseModel):
     protein_g: float = 0
     carbs_g: float = 0
     fat_g: float = 0
+    calculation_source: str = "health_profile"
+    formula_version: str = "menugreen-health-v1"
 
 
 class ActualIntakeContext(BaseModel):

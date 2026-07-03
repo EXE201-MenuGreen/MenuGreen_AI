@@ -17,6 +17,7 @@ class ChatRequest(BaseModel):
     thread_id: str | None = None
     request_id: str | None = None
     conversation_history: list[ConversationMessage] = Field(default_factory=list)
+    context: dict[str, Any] = Field(default_factory=dict)
     skip_save: bool = False
 
 

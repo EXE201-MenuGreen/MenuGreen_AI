@@ -1120,6 +1120,38 @@ class CoachService:
         return any(phrase in text for phrase in phrases)
 
     @staticmethod
+    def _wants_daily_target_kcal(message: str) -> bool:
+        text = CoachService._normalize_match_text(message)
+        if not text:
+            return False
+        phrases = (
+            "can nap bao nhieu calo",
+            "can nap bao nhieu kcal",
+            "can bao nhieu calo",
+            "can bao nhieu kcal",
+            "nen nap bao nhieu calo",
+            "nen nap bao nhieu kcal",
+            "muc tieu calo",
+            "muc tieu kcal",
+            "calo moi ngay",
+            "kcal moi ngay",
+            "calo mot ngay",
+            "kcal mot ngay",
+        )
+        if any(phrase in text for phrase in phrases):
+            return True
+        has_calorie = "calo" in text or "kcal" in text
+        target_signals = (
+            "nen an bao nhieu",
+            "can an bao nhieu",
+            "can nap",
+            "nen nap",
+            "luong calo can",
+            "nhu cau calo",
+        )
+        return has_calorie and any(signal in text for signal in target_signals)
+
+    @staticmethod
     def _meal_slot_label(slot: str | None) -> str:
         return {
             "breakfast": "bữa sáng",
@@ -1334,7 +1366,7 @@ class CoachService:
         profile = self.repo.get_profile(request.user_id) if request.user_id else None
         plan = self.repo.get_subscription_plan(request.user_id) if request.user_id else "free"
         logs_7d = self.repo.get_meal_logs_7d(request.user_id) if request.user_id else []
-        context = build_context_snapshot(profile, logs_7d)
+        context = build_context_snapshot(profile, logs_7d, request.context)
         last_recommended_name = self._extract_last_recommended_name(request.conversation_history)
         urls = self._extract_urls(request.message)
         contextual_intent = self._infer_contextual_intent(
@@ -1380,6 +1412,8 @@ class CoachService:
                 intent = "meal_plan"
             elif heuristic_intent == "recipe_search" and intent in ("general", "meal_plan", "nutrition_calc"):
                 intent = "recipe_search"
+            elif heuristic_intent == "nutrition_calc" and intent in ("general", "meal_plan", "recipe_search"):
+                intent = "nutrition_calc"
             response_text, route_flags = self._compose_contextual_response(
                 intent,
                 context,
@@ -1457,10 +1491,33 @@ class CoachService:
         remaining = context.get("remaining_totals", {})
         targets = context.get("targets", {})
         profile = context.get("profile", {})
-        goal = profile.get("goal", "maintain")
+        goal = profile.get("goal") or "maintain"
         normalized_text = CoachService._normalize_match_text(message)
 
         if intent == "nutrition_calc":
+            if self._wants_daily_target_kcal(message):
+                target_kcal = float(targets.get("calories_kcal", 0) or 0)
+                if target_kcal <= 0:
+                    return (
+                        "Mình chưa có đủ chiều cao, cân nặng, mức vận động và mục tiêu để tính lượng calo bạn cần nạp hôm nay. "
+                        "Bạn hãy cập nhật hồ sơ sức khỏe rồi hỏi lại nhé.",
+                        ["missing-calorie-target"],
+                    )
+                consumed_kcal = float(totals.get("calories_kcal", 0) or 0)
+                remaining_kcal = float(remaining.get("calories_kcal", 0) or 0)
+                tdee_kcal = profile.get("tdee_kcal", profile.get("TdeeKcal"))
+                bmr_kcal = profile.get("bmr_kcal", profile.get("BmrKcal"))
+                basis = []
+                if tdee_kcal:
+                    basis.append(f"TDEE {tdee_kcal} kcal")
+                if bmr_kcal:
+                    basis.append(f"BMR {bmr_kcal} kcal")
+                basis_text = f" (dựa trên {', '.join(basis)} và mục tiêu {goal})" if basis else f" (theo mục tiêu {goal})"
+                return (
+                    f"Hôm nay mục tiêu của bạn là {target_kcal:g} kcal{basis_text}. "
+                    f"Bạn đã nạp {consumed_kcal:g} kcal, nên còn khoảng {remaining_kcal:g} kcal cho phần còn lại trong ngày.",
+                    ["daily-calorie-target", str(context.get("target_source") or "unknown")],
+                )
             is_status_check = any(
                 phrase in normalized_text
                 for phrase in (
