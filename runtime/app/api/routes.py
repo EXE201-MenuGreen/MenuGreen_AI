@@ -368,3 +368,75 @@ def create_meal_plan_7d(request: MealPlan7dRequest) -> MealPlan7dResponse:
         return MealPlan7dResponse(**plan)
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/api/ai/suggestions")
+def get_ai_suggestions(user_id: str) -> list[str]:
+    # 1. Fetch user context
+    try:
+        context = context_service.build_context(user_id=user_id)
+        context_dict = context.model_dump()
+    except Exception:
+        context_dict = {}
+
+    # 2. Try calling Gemini
+    if coach_service.gemini_pool.is_available():
+        profile = context_dict.get("user_profile") or {}
+        nutritional_target = context_dict.get("nutritional_target") or {}
+        actual_intake = context_dict.get("actual_intake_today") or {}
+        remaining = context_dict.get("remaining_budget_today") or {}
+        safety = context_dict.get("safety_and_allergies") or {}
+        prefs = context_dict.get("preferences") or {}
+
+        prompt = f"""
+        Bạn là AI Coach Dinh dưỡng cho ứng dụng MenuGreen.
+        Dựa trên thông tin dinh dưỡng của người dùng hôm nay:
+        - Mục tiêu: {profile.get("goal_mode") or "Dinh dưỡng cân bằng"}
+        - Chiều cao: {profile.get("height_cm")} cm, Cân nặng: {profile.get("weight_kg")} kg
+        - Calo mục tiêu: {nutritional_target.get("calories_kcal")} kcal
+        - Thực tế đã nạp: {actual_intake.get("calories_kcal")} kcal (Protein: {actual_intake.get("protein_g")}g, Carbs: {actual_intake.get("carbs_g")}g, Fat: {actual_intake.get("fat_g")}g)
+        - Ngân sách calo còn lại: {remaining.get("calories_kcal")} kcal
+        - Dị ứng: {", ".join(safety.get("allergen_names", [])) or "Không"}
+        - Thực phẩm ghét/không thích: {", ".join(prefs.get("disliked_ingredients", [])) or "Không"}
+
+        Hãy đề xuất chính xác 4 câu hỏi gợi ý hành động tiếp theo ngắn gọn, tự nhiên, mang tính cá nhân hóa cao cho người dùng này (ví dụ: đề xuất bữa tối phù hợp calo còn lại, làm sao bù protein thiếu, món ăn thay thế cho thực phẩm dị ứng).
+        Mỗi câu hỏi phải cực kỳ ngắn gọn (dưới 15 từ), viết bằng tiếng Việt tự nhiên và hướng vào hành động cụ thể.
+
+        YÊU CẦU ĐỊNH DẠNG:
+        Trả về dưới dạng một mảng JSON các chuỗi (JSON array of strings), không chứa markdown block (như ```json), không giải thích gì thêm.
+        Ví dụ:
+        [
+          "Câu hỏi đề xuất 1?",
+          "Câu hỏi đề xuất 2?",
+          "Câu hỏi đề xuất 3?",
+          "Câu hỏi đề xuất 4?"
+        ]
+        """
+        try:
+            response_text = coach_service._invoke_gemini_text(
+                prompt=prompt,
+                cache_namespace="suggestions",
+            )
+            if response_text:
+                clean_text = response_text.strip()
+                if clean_text.startswith("```"):
+                    lines = clean_text.splitlines()
+                    if lines[0].startswith("```"):
+                        lines = lines[1:]
+                    if lines and lines[-1].strip() == "```":
+                        lines = lines[:-1]
+                    clean_text = "\n".join(lines).strip()
+                suggestions = json.loads(clean_text)
+                if isinstance(suggestions, list) and len(suggestions) > 0:
+                    return [str(s) for s in suggestions[:4]]
+        except Exception:
+            pass
+
+    # Fallback default suggestions
+    return [
+        "Cách tối ưu hóa calo cho bữa trưa của tôi là gì?",
+        "Tôi bị dị ứng hải sản thì nên ăn món gì thay thế cơm gà?",
+        "Tải thực đơn ăn kiêng giảm cân 1500 calo mỗi ngày?",
+        "Làm sao để hạn chế cơn thèm ăn vào buổi tối?"
+    ]
+

@@ -401,17 +401,25 @@ class CoachService:
             )
         ):
             return "meal_plan"
-        if has_log_signal:
-            return "nutrition_calc"
-        if (
-            has_nutrition_signal
-            and any(token in normalized_text for token in ("tinh", "bao nhieu", "tong", "vuot", "thieu", "uoc luong", "log", "xoa", "sua", "con lai"))
-        ) or has_numeric_macro_signal:
-            return "nutrition_calc"
-        if re.search(r"\ban .+ duoc khong\b", normalized_text) and not any(
-            token in normalized_text for token in ("an gi", "nen an gi")
-        ):
-            return "nutrition_calc"
+        has_suggestion_request = any(
+            token in normalized_text
+            for token in (
+                "goi y", "de xuat", "recommend", "rcm", "an gi", "an j",
+                "thuc don", "meal plan", "mon gi", "mon nao", "co mon", "nen an gi"
+            )
+        )
+        if not has_suggestion_request:
+            if has_log_signal:
+                return "nutrition_calc"
+            if (
+                has_nutrition_signal
+                and any(token in normalized_text for token in ("tinh", "bao nhieu", "tong", "vuot", "thieu", "uoc luong", "log", "xoa", "sua", "con lai"))
+            ) or has_numeric_macro_signal:
+                return "nutrition_calc"
+            if re.search(r"\ban .+ duoc khong\b", normalized_text) and not any(
+                token in normalized_text for token in ("an gi", "nen an gi")
+            ):
+                return "nutrition_calc"
         if has_meal_fragment or has_macro_target_only:
             return "meal_plan"
         if has_meal_signal:
@@ -495,11 +503,19 @@ class CoachService:
             )
         )
 
-        if any(
+        has_suggestion_request = any(
             token in normalized_text
-            for token in ("tinh", "kcal", "calo", "protein", "carb", "fat", "macro", "log", "nhap nham", "xoa")
-        ):
-            return "nutrition_calc"
+            for token in (
+                "goi y", "de xuat", "recommend", "rcm", "an gi", "an j",
+                "thuc don", "meal plan", "mon gi", "mon nao", "co mon", "nen an gi"
+            )
+        )
+        if not has_suggestion_request:
+            if any(
+                token in normalized_text
+                for token in ("tinh", "kcal", "calo", "protein", "carb", "fat", "macro", "log", "nhap nham", "xoa")
+            ):
+                return "nutrition_calc"
 
         if has_recipe_context and any(
             token in normalized_text
@@ -1385,28 +1401,30 @@ class CoachService:
             source = "fallback"
             confidence = None
 
-        self.repo.save_chat_session(
-            user_id=request.user_id,
-            thread_id=thread_id,
-            role="user",
-            content=request.message,
-            context_snapshot=context,
-            model_name=self.settings.llm_model,
-        )
+        if not request.skip_save:
+            self.repo.save_chat_session(
+                user_id=request.user_id,
+                thread_id=thread_id,
+                role="user",
+                content=request.message,
+                context_snapshot=context,
+                model_name=self.settings.llm_model,
+            )
         safe_response, safety_flags = self.safety.apply(
             user_message=request.message,
             response_text=response_text,
             context=context,
         )
 
-        self.repo.save_chat_session(
-            user_id=request.user_id,
-            thread_id=thread_id,
-            role="assistant",
-            content=safe_response,
-            context_snapshot=context,
-            model_name=self.settings.llm_model,
-        )
+        if not request.skip_save:
+            self.repo.save_chat_session(
+                user_id=request.user_id,
+                thread_id=thread_id,
+                role="assistant",
+                content=safe_response,
+                context_snapshot=context,
+                model_name=self.settings.llm_model,
+            )
         source_parts = [source, *route_flags]
         if safety_flags:
             source_parts.append("safety")
@@ -1440,7 +1458,45 @@ class CoachService:
         targets = context.get("targets", {})
         profile = context.get("profile", {})
         goal = profile.get("goal", "maintain")
+        normalized_text = CoachService._normalize_match_text(message)
+
         if intent == "nutrition_calc":
+            is_status_check = any(
+                phrase in normalized_text
+                for phrase in (
+                    "con lai", "con bao nhieu", "hom nay nap", "da nap", "lich su an"
+                )
+            )
+            if not is_status_check and self.gemini_pool.is_available():
+                prompt = (
+                    "Bạn là AI Coach dinh dưỡng cho ứng dụng MenuGreen.\n"
+                    "Hãy trả lời câu hỏi tính toán calo hoặc tư vấn dinh dưỡng của người dùng bằng tiếng Việt, một cách NGẮN GỌN, dễ hiểu và chuyên nghiệp.\n"
+                    "Hãy áp dụng các quy tắc/công thức tính toán dưới đây khi người dùng hỏi các vấn đề liên quan:\n"
+                    "1. Chỉ số BMI: BMI = Cân nặng (kg) / [Chiều cao (m)]^2. Phân loại theo chuẩn WHO:\n"
+                    "   - < 18.5: Gầy\n"
+                    "   - 18.5 - 24.9: Bình thường\n"
+                    "   - 25.0 - 29.9: Thừa cân\n"
+                    "   - >= 30.0: Béo phì\n"
+                    "2. Giảm cân & Thâm hụt Calo: 1kg mỡ thừa tương đương khoảng 7700 kcal. Mức thâm hụt calo hằng ngày khuyến nghị là 500-1000 kcal so với TDEE (tuyệt đối không để lượng calo nạp hằng ngày thấp dưới mức BMR của họ).\n"
+                    "3. Phân bổ Macro theo chế độ ăn kiêng cụ thể:\n"
+                    "   - Keto: 5% Carbs, 25% Protein, 70% Fat.\n"
+                    "   - Low-Carb: 20% Carbs, 40% Protein, 40% Fat.\n"
+                    "   - Tăng cơ (High-Protein): 40% Carbs, 30% Protein, 30% Fat.\n"
+                    "   - Cân bằng (Balanced): 50% Carbs, 20% Protein, 30% Fat.\n"
+                    "Tính toán số liệu cụ thể dựa trên chỉ số của người dùng dưới đây nếu họ yêu cầu thiết lập chế độ.\n\n"
+                    "Dưới đây là thông tin hiện tại của người dùng trong hệ thống (sử dụng nếu liên quan):\n"
+                    f"- Mục tiêu: {goal}\n"
+                    f"- Chiều cao/Cân nặng: {profile.get('height_cm', profile.get('HeightCm', '?'))} cm, {profile.get('weight_kg', profile.get('WeightKg', '?'))} kg\n"
+                    f"- BMI: {profile.get('bmi', '?')}\n"
+                    f"- BMR/TDEE: {profile.get('bmr_kcal', '?')} kcal / {profile.get('tdee_kcal', '?')} kcal\n"
+                    f"- Dinh dưỡng hôm nay đã nạp: {totals.get('calories_kcal', 0)} kcal (P/C/F = {totals.get('protein_g', 0)}/{totals.get('carbs_g', 0)}/{totals.get('fat_g', 0)}g)\n"
+                    f"- Mục tiêu ngày: {targets.get('calories_kcal', 0)} kcal\n\n"
+                    f"Câu hỏi của user: {message.strip()}\n"
+                )
+                response_text = self._invoke_gemini_text(prompt, cache_namespace="nutrition-calc")
+                if response_text:
+                    return response_text, ["gemini-calc"]
+
             return (
                 f"Hôm nay (mục tiêu: {goal}) bạn đã nạp {totals.get('calories_kcal', 0)} kcal, "
                 f"P/C/F = {totals.get('protein_g', 0)}/{totals.get('carbs_g', 0)}/{totals.get('fat_g', 0)}g. "
@@ -1598,7 +1654,10 @@ class CoachService:
 
             if constrained_items:
                 if dish_only_request:
-                    return self._dish_only_response(constrained_items), ["dish-only"]
+                    resp = self._dish_only_response(constrained_items)
+                    if remaining_text:
+                        resp = f"{remaining_text}{resp}"
+                    return resp, ["dish-only"]
                 slot_label = self._meal_slot_label(constraints.get("meal_slot"))
                 budget_vnd = constraints.get("budget_vnd")
                 time_limit_min = constraints.get("time_limit_min")
@@ -1694,7 +1753,10 @@ class CoachService:
                 )
             if suggestions:
                 if dish_only_request:
-                    return self._dish_only_response(suggestions), [*route_flags, "dish-only"]
+                    resp = self._dish_only_response(suggestions)
+                    if constraints.get("wants_remaining") and remaining_text:
+                        resp = f"{remaining_text}{resp}"
+                    return resp, [*route_flags, "dish-only"]
                 meal_slots = ("Sáng", "Trưa", "Tối")
                 lines: list[str] = []
                 total_kcal = 0.0

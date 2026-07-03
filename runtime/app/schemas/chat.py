@@ -1,4 +1,4 @@
-﻿from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field
 from typing import Any, Literal
 
 from app.schemas.actions import ActionSuggestion
@@ -17,6 +17,7 @@ class ChatRequest(BaseModel):
     thread_id: str | None = None
     request_id: str | None = None
     conversation_history: list[ConversationMessage] = Field(default_factory=list)
+    skip_save: bool = False
 
 
 class ChatResponse(BaseModel):

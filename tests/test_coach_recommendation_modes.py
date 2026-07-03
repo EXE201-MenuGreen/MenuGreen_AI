@@ -49,6 +49,9 @@ class FakeCoachRepo:
     def search_foods_by_name(self, _query: str, limit: int = 5):
         return []
 
+    def list_meal_candidates_by_constraints(self, **_kwargs):
+        return self.items
+
 
 def build_service() -> CoachService:
     service = CoachService.__new__(CoachService)
@@ -112,3 +115,20 @@ def test_recipe_recommendation_keeps_recipe_details():
     assert "520 kcal" in response
     assert "cách làm: Ướp gà → Áp chảo → Dùng cùng cơm" in response
     assert "recipe-detail" in flags
+
+
+def test_mixed_query_is_not_overridden_to_nutrition_calc():
+    # Containing both "kcal" and "gợi ý" should not be forcefully overridden to nutrition_calc
+    assert CoachService._heuristic_intent("Hôm nay tôi còn bao nhiêu kcal và gợi ý bữa trưa nhanh dưới 60k?") != "nutrition_calc"
+
+
+def test_dish_recommendation_with_remaining_kcal():
+    response, flags = build_service()._compose_contextual_response(
+        "meal_plan",
+        build_context(),
+        "Hôm nay tôi còn bao nhiêu kcal và gợi ý bữa trưa nhanh dưới 60k?",
+    )
+    assert "còn khoảng 1100 kcal" in response
+    assert "Cơm gà áp chảo" in response
+    assert "dish-only" in flags
+

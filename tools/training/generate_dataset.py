@@ -1,4 +1,4 @@
-﻿"""
+"""
 Generate a large intent dataset with template-based augmentation.
 
 Run:
@@ -107,6 +107,24 @@ SEED_DATASET = {
         "Nên chia macro thế nào để giảm mỡ giữ cơ",
         "Bữa tối còn bao nhiêu calo là hợp lý",
         "Hôm nay tôi dư carb thì nên ăn gì",
+        "Tính lượng calo cho người 60kg muốn giảm mỡ",
+        "Tính TDEE cho nữ cao 1m60 nặng 50kg",
+        "BMR tính như thế nào thế AI",
+        "Tính protein cần ăn cho nam 75kg tập tạ",
+        "Cao 175cm nặng 80kg muốn tăng cơ tính macro giùm",
+        "Tính giúp tôi lượng chất béo cần nạp",
+        "Tinh giup luong calories giam can",
+        "Công thức tính TDEE và BMR",
+        "Tính BMR cho nam 25 tuổi nặng 70kg cao 1m80",
+        "Tôi nặng 65kg muốn tăng cân cần nạp bao nhiêu protein",
+        "Tính BMI của tôi",
+        "BMI 26 là thừa cân hay bình thường",
+        "Tính chỉ số BMI cho người nặng 80kg cao 1m7",
+        "Ăn Keto thì chia macro thế nào",
+        "Tính lượng calo và carb chế độ Low-carb",
+        "Tôi muốn giảm 5kg trong 2 tháng thì mỗi ngày thâm hụt bao nhiêu calo",
+        "Tính thời gian giảm cân an toàn",
+        "Macro tăng cơ chia tỉ lệ thế nào",
     ],
     "inventory_check": [
         "Nguyên liệu nào sắp hết hạn",
@@ -141,6 +159,14 @@ SEED_DATASET = {
         "Lập thực đơn 5 ngày đi làm mang cơm",
         "Kế hoạch ăn tối ít carb trong 1 tuần",
         "Tạo thực đơn tăng cơ với ngân sách 100k/ngày",
+        "Hôm nay tôi còn bao nhiêu kcal và gợi ý bữa trưa nhanh dưới 60k?",
+        "Tôi còn lại bao nhiêu calo hôm nay, gợi ý cho tôi món ăn tối nhẹ",
+        "Gợi ý món ăn trưa dưới 50k phù hợp với lượng calo còn lại",
+        "Calo còn lại hôm nay là bao nhiêu, rcm giùm món gì ăn nhanh",
+        "Hôm nay còn bao nhiêu kcal và nên ăn món gì tiếp",
+        "goi y bua toi phu hop voi calo con lai",
+        "thuc don bua trua nhanh gon le duoi 60k va xem con bao nhieu calo",
+        "Xem lượng calo còn lại hôm nay và gợi ý 3 món ăn ít béo",
     ],
     "web_browsing": [
         "https://cookpad.com/vn/recipe/123456",

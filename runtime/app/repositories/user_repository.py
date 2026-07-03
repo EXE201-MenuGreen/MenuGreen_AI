@@ -1034,15 +1034,39 @@ class UserRepository:
                 return None
             insert_payload = dict(payload)
             insert_payload["user_id"] = resolved_id
-            res = client.table("activity_logs").insert(
-                {
-                    "user_id": resolved_id,
-                    "action": "ai_feedback",
-                    "entity_type": "ai_message",
-                    "entity_id": payload.get("message_id") if self.is_uuid(payload.get("message_id")) else None,
-                    "metadata": insert_payload,
-                }
-            ).execute()
+            
+            message_id = payload.get("message_id")
+            existing = []
+            if self.is_uuid(message_id):
+                existing_res = (
+                    client.table("activity_logs")
+                    .select("id")
+                    .eq("action", "ai_feedback")
+                    .eq("entity_type", "ai_message")
+                    .eq("entity_id", message_id)
+                    .eq("user_id", resolved_id)
+                    .execute()
+                )
+                existing = existing_res.data or []
+
+            if existing:
+                res = (
+                    client.table("activity_logs")
+                    .update({"metadata": insert_payload})
+                    .eq("id", existing[0]["id"])
+                    .execute()
+                )
+            else:
+                res = client.table("activity_logs").insert(
+                    {
+                        "user_id": resolved_id,
+                        "action": "ai_feedback",
+                        "entity_type": "ai_message",
+                        "entity_id": message_id if self.is_uuid(message_id) else None,
+                        "metadata": insert_payload,
+                    }
+                ).execute()
+
             rows = res.data or []
             if not rows:
                 return None
