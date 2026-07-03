@@ -25,6 +25,7 @@ from app.schemas.context import (
     UserProfileContext,
     WorkerContextResponse,
 )
+from app.schemas.recommendations import RecommendationRequest
 from app.services.recommendation_service import RecommendationService
 
 
@@ -77,6 +78,19 @@ class FakeContextService:
             ),
             subscription="free",
         )
+
+
+class PersonalizedContextService(FakeContextService):
+    def build_context(self, user_id: str, target_date: str | None = None) -> WorkerContextResponse:
+        context = super().build_context(user_id, target_date)
+        context.preferences.preferences = {
+            "recommendationTuning": {
+                "preferredItems": ["Đậu hũ sốt cà"],
+                "avoidedItems": ["Ức gà áp chảo"],
+                "ruleWeights": {"safe": {"weight": 1.2}},
+            }
+        }
+        return context
 
 
 class FakeRecommendationRepo:
@@ -255,6 +269,21 @@ def test_safe_recommendation_filters_allergy(client):
     assert "unsafe-candidates-excluded" in body["safety_flags"]
 
 
+def test_recommendation_feedback_tuning_changes_ranking():
+    service = RecommendationService(
+        repo=FakeRecommendationRepo(),
+        context_service=PersonalizedContextService(),
+    )
+    response = service.recommend(
+        RecommendationRequest(user_id="user-1", limit=2),
+        "safe",
+    )
+
+    assert response.items[0].id == "tofu"
+    assert response.scores["tofu"].personalization_fit > 0
+    assert response.scores["chicken"].personalization_fit < 0
+
+
 def test_budget_daily_weekly_and_schedule_contracts(client):
     budget = client.post(
         "/api/ai/recommendations/budget-aware",
@@ -283,6 +312,13 @@ def test_budget_daily_weekly_and_schedule_contracts(client):
     )
     assert schedule.status_code == 200
     assert schedule.json()["items"][0]["recommended_time"] == "18:30"
+    schedule_action = next(
+        action for action in schedule.json()["actions"] if action["type"] == "schedule_meal"
+    )
+    selected_id = schedule.json()["items"][0]["id"]
+    action_entity_id = schedule_action["payload"].get("food_id") or schedule_action["payload"].get("recipe_id")
+    assert action_entity_id == selected_id
+    assert schedule_action["payload"]["scheduled_time"] == "18:30"
 
 
 def test_worker_chat_backward_compatible_fields(client):

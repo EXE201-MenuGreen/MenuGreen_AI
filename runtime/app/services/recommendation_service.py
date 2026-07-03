@@ -75,7 +75,7 @@ class RecommendationService:
             if within_budget:
                 safe_candidates = within_budget
         target_kcal = self._target_kcal(request, context_dict, mode)
-        ranked = self._rank(safe_candidates, request, target_kcal, budget_per_item)
+        ranked = self._rank(safe_candidates, request, target_kcal, budget_per_item, context_dict, mode)
         items = self._shape_items(ranked, request, mode)
 
         reasons: dict[str, list[str]] = {}
@@ -94,7 +94,7 @@ class RecommendationService:
             scores=scores,
             safety_flags=list(dict.fromkeys(safety_flags)),
             excluded_items=[ExcludedRecommendationItem(**row) for row in excluded],
-            actions=self._actions_for_mode(request, mode),
+            actions=self._actions_for_mode(request, mode, items),
             context_summary={
                 "target_date": context.target_date,
                 "remaining_budget_today": context.remaining_budget_today.model_dump(),
@@ -127,6 +127,8 @@ class RecommendationService:
         request: RecommendationRequest,
         target_kcal: float,
         budget_per_item: int | None,
+        context: dict,
+        mode: RecommendationMode,
     ) -> list[tuple[dict, RecommendationScore]]:
         ranked: list[tuple[dict, RecommendationScore]] = []
         for row in candidates:
@@ -143,7 +145,17 @@ class RecommendationService:
             if request.max_cook_time_min and total_time > 0:
                 time_fit = max(0.0, 1.0 - max(total_time - request.max_cook_time_min, 0.0) / max(request.max_cook_time_min, 1))
             meal_slot_fit = self._meal_slot_fit(row, request.meal_slot)
-            total = round(macro_fit * 0.35 + budget_fit * 0.20 + time_fit * 0.15 + meal_slot_fit * 0.15 + 0.15, 4)
+            personalization_fit = self._personalization_fit(row, context, mode)
+            total = round(
+                macro_fit * 0.35
+                + budget_fit * 0.20
+                + time_fit * 0.15
+                + meal_slot_fit * 0.15
+                + 0.15
+                + personalization_fit * 0.12,
+                4,
+            )
+            total = max(0.0, min(total, 1.0))
             if budget_per_item and price > budget_per_item * 1.5:
                 total *= 0.6
             if request.max_cook_time_min and total_time > request.max_cook_time_min * 1.5:
@@ -157,12 +169,38 @@ class RecommendationService:
                         time_fit=round(time_fit, 4),
                         allergy_safety=1,
                         meal_slot_fit=round(meal_slot_fit, 4),
+                        personalization_fit=round(personalization_fit, 4),
                         total=round(total, 4),
                     ),
                 )
             )
         ranked.sort(key=lambda pair: (-pair[1].total, str(pair[0].get("name") or "")))
         return ranked
+
+    def _personalization_fit(self, row: dict, context: dict, mode: RecommendationMode) -> float:
+        preferences = ((context or {}).get("preferences") or {}).get("preferences") or {}
+        if not isinstance(preferences, dict):
+            return 0.0
+        tuning = preferences.get("recommendationTuning") or preferences.get("recommendation_tuning") or {}
+        if not isinstance(tuning, dict):
+            return 0.0
+
+        candidate_name = self.allergy_service.normalize_text(row.get("name"))
+        preferred = [self.allergy_service.normalize_text(x) for x in tuning.get("preferredItems", [])]
+        avoided = [self.allergy_service.normalize_text(x) for x in tuning.get("avoidedItems", [])]
+        fit = 0.0
+        if candidate_name and any(name and (name in candidate_name or candidate_name in name) for name in preferred):
+            fit += 0.7
+        if candidate_name and any(name and (name in candidate_name or candidate_name in name) for name in avoided):
+            fit -= 1.0
+
+        weights = tuning.get("ruleWeights") or {}
+        mode_tuning = weights.get(mode) if isinstance(weights, dict) else None
+        if isinstance(mode_tuning, dict):
+            weight = self._to_float(mode_tuning.get("weight"))
+            if weight > 0:
+                fit += max(-0.3, min((weight - 1.0) * 0.4, 0.3))
+        return max(-1.0, min(fit, 1.0))
 
     def _meal_slot_fit(self, row: dict, meal_slot: str | None) -> float:
         if not meal_slot or meal_slot == "any":
@@ -270,9 +308,18 @@ class RecommendationService:
             reasons.append("Phù hợp thời gian nấu.")
         if mode == "smart-schedule":
             reasons.append(f"Gợi ý giờ ăn {item.recommended_time or 'phù hợp'} theo bữa.")
+        if score.personalization_fit > 0:
+            reasons.append("Phù hợp với feedback gợi ý trước đó của bạn.")
+        elif score.personalization_fit < 0:
+            reasons.append("Đã giảm ưu tiên dựa trên feedback trước đó.")
         return reasons
 
-    def _actions_for_mode(self, request: RecommendationRequest, mode: RecommendationMode) -> list[ActionSuggestion]:
+    def _actions_for_mode(
+        self,
+        request: RecommendationRequest,
+        mode: RecommendationMode,
+        items: list[RecommendationItem],
+    ) -> list[ActionSuggestion]:
         actions: list[ActionSuggestion] = []
         if mode in {"generate", "daily-menu", "weekly-plan"}:
             actions.append(
@@ -293,12 +340,27 @@ class RecommendationService:
                 )
             )
         if mode == "smart-schedule":
+            selected = items[0] if items else None
+            schedule_payload = {
+                "user_id": request.user_id,
+                "meal_slot": request.meal_slot,
+            }
+            if selected:
+                schedule_payload.update(
+                    {
+                        "food_id" if selected.source == "food" else "recipe_id": selected.id,
+                        "planned_date": selected.plan_date,
+                        "scheduled_time": selected.recommended_time,
+                        "meal_type": selected.meal_type,
+                        "target_calories": int(selected.calories_kcal),
+                    }
+                )
             actions.append(
                 ActionSuggestion(
                     type="schedule_meal",
                     title="Lên lịch bữa ăn",
                     description="Đặt khung giờ gợi ý cho các món đã chọn.",
-                    payload={"user_id": request.user_id, "meal_slot": request.meal_slot},
+                    payload=schedule_payload,
                 )
             )
         return actions

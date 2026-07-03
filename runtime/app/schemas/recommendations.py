@@ -48,6 +48,7 @@ class RecommendationScore(BaseModel):
     time_fit: float = 0
     allergy_safety: float = 1
     meal_slot_fit: float = 0
+    personalization_fit: float = 0
     total: float = 0
 
 
