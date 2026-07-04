@@ -768,6 +768,8 @@ class CoachService:
         text = CoachService._normalize_match_text(message)
         if not text:
             return {}
+        text = text.replace("lanh manh", "healthy")
+
 
         weather: str | None = None
         if any(token in text for token in ("nang nong", "troi nong", "oi buc", "nong buc", "mua he")):
@@ -937,7 +939,16 @@ class CoachService:
         seen_names = set(exclude_names)
         for item in ranked:
             name = str(item.get("name", "")).strip().lower()
-            if not name or name in seen_names:
+            if not name:
+                continue
+            is_dup = False
+            for seen in seen_names:
+                if name in seen or seen in name:
+                    overlap_len = min(len(name), len(seen))
+                    if overlap_len > 8: 
+                        is_dup = True
+                        break
+            if is_dup:
                 continue
             seen_names.add(name)
             picked.append(item)
@@ -1243,6 +1254,8 @@ class CoachService:
         if not candidates:
             return [], profile
 
+        meal_slot = self._extract_meal_slot(message)
+
         if profile.get("weather") == "hot":
             target_kcal = 320.0
         elif profile.get("weather") in ("cold", "rainy"):
@@ -1253,6 +1266,7 @@ class CoachService:
         ranked = sorted(
             candidates,
             key=lambda row: (
+                self._meal_slot_score(meal_slot, row),
                 self._weather_keyword_score(profile, row),
                 abs(float(row.get("calories_kcal", 0) or 0) - target_kcal),
                 float(row.get("fat_g", 0) or 0) if profile.get("wants_light") or profile.get("weather") == "hot" else 0.0,

@@ -6,10 +6,12 @@ from fastapi.responses import StreamingResponse
 import psycopg
 from psycopg.rows import dict_row
 
+from pydantic import BaseModel, Field
 from app.core.config import get_settings
 from app.schemas.chat import (
     ChatRequest,
     ChatResponse,
+    ConversationMessage,
     CrawlerIngestRequest,
     CrawlerIngestResponse,
     CrawlerNormalizeRequest,
@@ -439,4 +441,78 @@ def get_ai_suggestions(user_id: str) -> list[str]:
         "Tải thực đơn ăn kiêng giảm cân 1500 calo mỗi ngày?",
         "Làm sao để hạn chế cơn thèm ăn vào buổi tối?"
     ]
+
+
+class ConversationSuggestionsRequest(BaseModel):
+    user_id: str
+    conversation_history: list[ConversationMessage] = Field(default_factory=list)
+
+
+@router.post("/api/ai/conversation/suggestions")
+def get_conversation_suggestions(request: ConversationSuggestionsRequest) -> list[str]:
+    # 1. Fetch user context
+    try:
+        context = context_service.build_context(user_id=request.user_id)
+        context_dict = context.model_dump()
+    except Exception:
+        context_dict = {}
+
+    # 2. Format conversation history
+    history_str = ""
+    for msg in request.conversation_history[-8:]:
+        role_display = "Người dùng" if msg.role == "user" else "Trợ lý AI"
+        history_str += f"{role_display}: {msg.content}\n"
+
+    # 3. Try calling Gemini
+    if coach_service.gemini_pool.is_available() and request.conversation_history:
+        profile = context_dict.get("user_profile") or {}
+        prompt = f"""
+        Bạn là AI Coach Dinh dưỡng cho ứng dụng MenuGreen.
+        Dựa trên hồ sơ người dùng (Mục tiêu: {profile.get("goal_mode") or "Dinh dưỡng cân bằng"}) và lịch sử cuộc trò chuyện gần nhất dưới đây:
+
+        LỊCH SỬ TRÒ CHUYỆN:
+        {history_str}
+
+        Hãy đề xuất chính xác 4 hành động gợi ý tiếp theo ngắn gọn, tự nhiên, mang tính thiết thực và liên quan trực tiếp đến nội dung cuộc trò chuyện trên.
+        Các hành động gợi ý này nên hướng người dùng thực hiện các tính năng trong app (ví dụ: tạo thực đơn, thay thế món ăn, tối ưu ngân sách, ghi nhật ký ăn uống, hỏi công thức chi tiết, hoặc làm rõ thông tin đã thảo luận).
+        Mỗi gợi ý phải cực kỳ ngắn gọn (dưới 15 từ), viết bằng tiếng Việt tự nhiên dưới dạng câu hỏi hoặc câu lệnh hành động ngắn.
+
+        YÊU CẦU ĐỊNH DẠNG:
+        Trả về dưới dạng một mảng JSON các chuỗi (JSON array of strings), không chứa markdown block (như ```json), không giải thích gì thêm.
+        Ví dụ:
+        [
+          "Lên kế hoạch ăn kiêng giảm cân?",
+          "Thay thế món gà trong thực đơn?",
+          "Tối ưu chi phí ăn uống tuần này?",
+          "Xem chi tiết công thức món xào?"
+        ]
+        """
+        try:
+            response_text = coach_service._invoke_gemini_text(
+                prompt=prompt,
+                cache_namespace="conversation-suggestions",
+            )
+            if response_text:
+                clean_text = response_text.strip()
+                if clean_text.startswith("```"):
+                    lines = clean_text.splitlines()
+                    if lines[0].startswith("```"):
+                        lines = lines[1:]
+                    if lines and lines[-1].strip() == "```":
+                        lines = lines[:-1]
+                    clean_text = "\n".join(lines).strip()
+                suggestions = json.loads(clean_text)
+                if isinstance(suggestions, list) and len(suggestions) > 0:
+                    return [str(s) for s in suggestions[:4]]
+        except Exception:
+            pass
+
+    # Fallback default conversation-related suggestions
+    return [
+        "Lên kế hoạch ăn uống 7 ngày cho tôi",
+        "Thay thế món ăn có trong thực đơn",
+        "Tối ưu hóa ngân sách chi tiêu hôm nay",
+        "Tôi muốn xem chi tiết công thức nấu ăn"
+    ]
+
 

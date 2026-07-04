@@ -38,7 +38,41 @@ class MealPlanService:
             max_items=300,
         )
         if not candidates:
-            raise RuntimeError("No meal candidates match budget/time constraints")
+            # Check if database has no active foods/recipes at all
+            all_items = self.repo.list_meal_candidates_by_constraints(
+                max_price_vnd=99999999,
+                max_total_time_min=99999,
+                max_items=10
+            )
+            if not all_items:
+                raise RuntimeError("Database holds no active foods or recipes. Please run database seeding.")
+
+            # Check if budget alone is too low
+            items_by_time_only = self.repo.list_meal_candidates_by_constraints(
+                max_price_vnd=99999999,
+                max_total_time_min=max_cook_time_min,
+                max_items=10
+            )
+            if items_by_time_only:
+                raise RuntimeError(
+                    f"Insufficient budget. No food or recipe in the database costs less than or equal to {per_meal_budget:,} VND per meal."
+                )
+
+            # Check if time alone is too short
+            items_by_budget_only = self.repo.list_meal_candidates_by_constraints(
+                max_price_vnd=per_meal_budget,
+                max_total_time_min=99999,
+                max_items=10
+            )
+            if items_by_budget_only:
+                raise RuntimeError(
+                    f"Max cook time is too short. No recipe in the database can be completed within {max_cook_time_min} minutes."
+                )
+
+            # Default fallback
+            raise RuntimeError(
+                f"No meal candidates match both the budget limit ({per_meal_budget:,} VND/meal) and max cook time ({max_cook_time_min} mins) constraints."
+            )
 
         ranked = sorted(
             candidates,

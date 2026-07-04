@@ -1015,7 +1015,17 @@ class UserRepository:
         seen_names: set[str] = set()
         for item in ranked:
             name = str(item.get("name", "")).strip().lower()
-            if not name or name in seen_names:
+            if not name:
+                continue
+            # Check similarity / substring overlap to prevent duplicate dishes
+            is_dup = False
+            for seen in seen_names:
+                if name in seen or seen in name:
+                    overlap_len = min(len(name), len(seen))
+                    if overlap_len > 8: 
+                        is_dup = True
+                        break
+            if is_dup:
                 continue
             seen_names.add(name)
             picked.append(item)
