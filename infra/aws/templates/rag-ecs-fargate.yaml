@@ -323,6 +323,8 @@ Resources:
 
   Service:
     Type: AWS::ECS::Service
+    DependsOn:
+      - HttpListener
     Properties:
       ServiceName: !Sub "${ProjectName}-${EnvironmentName}"
       Cluster: !Ref Cluster
