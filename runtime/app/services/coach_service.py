@@ -1426,7 +1426,7 @@ class CoachService:
                 intent = "meal_plan"
             elif heuristic_intent == "recipe_search" and intent in ("general", "meal_plan", "nutrition_calc"):
                 intent = "recipe_search"
-            elif heuristic_intent == "nutrition_calc" and intent in ("general", "meal_plan", "recipe_search"):
+            elif heuristic_intent == "nutrition_calc" and intent in ("general", "meal_plan", "recipe_search", "calorie_lookup"):
                 intent = "nutrition_calc"
             response_text, route_flags = self._compose_contextual_response(
                 intent,
@@ -1508,7 +1508,7 @@ class CoachService:
         goal = profile.get("goal") or "maintain"
         normalized_text = CoachService._normalize_match_text(message)
 
-        if intent == "nutrition_calc":
+        if intent in ("nutrition_calc", "calorie_lookup"):
             if self._wants_daily_target_kcal(message):
                 target_kcal = float(targets.get("calories_kcal", 0) or 0)
                 if target_kcal <= 0:

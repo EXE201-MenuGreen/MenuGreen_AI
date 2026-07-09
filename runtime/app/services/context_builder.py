@@ -126,13 +126,27 @@ def apply_system_nutrition_metrics(profile: dict | None) -> tuple[dict, str]:
 def _merge_supplied_context(profile: dict, totals: dict, supplied_context: dict | None) -> tuple[dict, dict]:
     supplied = supplied_context if isinstance(supplied_context, dict) else {}
     supplied_profile = supplied.get("profile") if isinstance(supplied.get("profile"), dict) else {}
+    user_profile = supplied.get("user_profile") if isinstance(supplied.get("user_profile"), dict) else {}
     health_profile = supplied.get("health_profile") if isinstance(supplied.get("health_profile"), dict) else {}
 
     merged_profile = dict(profile)
-    for source in (supplied_profile, health_profile):
+    for source in (supplied_profile, user_profile, health_profile):
         merged_profile.update({key: value for key, value in source.items() if value is not None})
 
     recent = supplied.get("recent_nutrition") if isinstance(supplied.get("recent_nutrition"), dict) else {}
+    actual_today = (
+        supplied.get("actual_intake_today")
+        if isinstance(supplied.get("actual_intake_today"), dict)
+        else {}
+    )
+    if actual_today:
+        totals = {
+            "calories_kcal": _to_float(_first_value(actual_today, "calories_kcal", "calories", "total_calories")),
+            "protein_g": _to_float(_first_value(actual_today, "protein_g", "protein", "total_protein_g")),
+            "carbs_g": _to_float(_first_value(actual_today, "carbs_g", "carbs", "total_carbs_g")),
+            "fat_g": _to_float(_first_value(actual_today, "fat_g", "fat", "total_fat_g")),
+            "fiber_g": _to_float(_first_value(actual_today, "fiber_g", "fiber", "total_fiber_g")),
+        }
     snapshot_date = str(_first_value(recent, "snapshot_date", "date") or "")[:10]
     if recent and snapshot_date == date.today().isoformat():
         totals = {
