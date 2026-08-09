@@ -331,12 +331,26 @@ class CoachService:
             "muon an",
             "thich an",
         ]
+        greeting_keywords = [
+            "hi",
+            "hello",
+            "helo",
+            "hey",
+            "chao",
+            "xin chao",
+            "chao ban",
+        ]
         if any(k in normalized_text for k in out_of_domain_keywords):
             return "general"
         if any(k in normalized_text for k in product_capability_keywords) and any(
             token in normalized_text for token in ("khong", "co", "luu", "tinh nang", "ho tro", "lich su")
         ):
             return "general"
+        if normalized_text in greeting_keywords or any(
+            normalized_text == k or normalized_text.startswith(f"{k} ")
+            for k in greeting_keywords
+        ):
+            return "greeting"
         if any(k in normalized_text for k in search_keywords):
             return "ai_search"
         if normalized_text.startswith(("hom nay an j", "hom nay an gi", "toi nay an gi", "sang nay an gi")):
@@ -1650,6 +1664,14 @@ class CoachService:
                 "Hiện runtime này đang trả câu trả lời dạng định hướng để BE tích hợp search provider "
                 "(web/search API) ở bước tiếp theo. "
                 "Bạn có thể bật pipeline search để mình trả kết quả có nguồn trích dẫn.",
+                [],
+            )
+
+        if intent == "greeting":
+            return (
+                "Chào bạn! Mình là Trợ lý Dinh dưỡng AI của MenuGreen. "
+                "Bạn có thể hỏi mình về món ăn, calo, thực đơn, công thức nấu, hoặc gợi ý bữa ăn theo ngân sách. "
+                "Ví dụ: 'Gợi ý món ít dầu cho bữa tối' hoặc 'Tôi còn bao nhiêu kcal hôm nay?'",
                 [],
             )
 
