@@ -1402,6 +1402,7 @@ class CoachService:
             request.conversation_history,
             last_recommended_name,
         )
+        heuristic_intent = self._heuristic_intent(request.message)
         is_short_followup = len(self._normalize_match_text(request.message).split()) <= 8
 
         if urls and self._looks_like_recipe_url(request.message, urls[0]):
@@ -1429,13 +1430,14 @@ class CoachService:
         elif self.classifier is not None:
             intent, score = self.classifier.predict(request.message)
             threshold = float(getattr(self.settings, "intent_confidence_threshold", 0.45))
-            heuristic_intent = self._heuristic_intent(request.message)
             if score < threshold:
                 intent = contextual_intent or heuristic_intent or "general"
             elif intent in ("unknown", ""):
                 intent = contextual_intent or heuristic_intent or "general"
             elif contextual_intent and is_short_followup:
                 intent = contextual_intent
+            elif heuristic_intent == "greeting":
+                intent = "greeting"
             elif heuristic_intent == "meal_plan" and intent in ("general", "recipe_search", "nutrition_calc"):
                 intent = "meal_plan"
             elif heuristic_intent == "recipe_search" and intent in ("general", "meal_plan", "nutrition_calc"):
@@ -1452,7 +1454,7 @@ class CoachService:
             source = "onnx"
             confidence = round(score, 4)
         else:
-            intent = contextual_intent or self._heuristic_intent(request.message) or "general"
+            intent = contextual_intent or heuristic_intent or "general"
             response_text, route_flags = self._compose_contextual_response(
                 intent,
                 context,
