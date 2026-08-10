@@ -90,9 +90,31 @@ def test_recommend_and_rcm_are_dish_recommendations():
     assert CoachService._heuristic_intent("rcm món khoảng 500 calo") == "meal_plan"
 
 
+def test_natural_food_suggestion_phrasing_stays_in_food_domain():
+    assert CoachService._heuristic_intent("goi y cho toi mon an") == "meal_plan"
+    assert CoachService._heuristic_intent("goi y man hinh may tinh") == "general"
+
+
 def test_recipe_words_select_recipe_mode():
     assert CoachService._heuristic_intent("recommend món ăn và công thức") == "recipe_search"
     assert CoachService._heuristic_intent("cách nấu cơm gà áp chảo") == "recipe_search"
+
+
+def test_food_recommendation_requires_food_domain_signal():
+    assert not CoachService._has_food_recommendation_signal("he lo")
+    assert not CoachService._has_food_recommendation_signal("viet email xin nghi giup toi")
+    assert not CoachService._has_food_recommendation_signal("hom nay thoi tiet the nao")
+    assert CoachService._has_food_recommendation_signal("hom nay nen an gi")
+    assert CoachService._has_food_recommendation_signal("goi y mon cho toi")
+    assert CoachService._has_food_recommendation_signal("toi muon an mon nay nhung khong biet nau")
+    assert CoachService._heuristic_intent("toi muon an mon nay nhung khong biet nau") == "recipe_search"
+
+
+def test_classifier_food_guess_is_guarded_without_food_signal():
+    assert CoachService._guard_food_recommendation_intent("recipe_search", "he lo", None) == "general"
+    assert CoachService._guard_food_recommendation_intent("meal_plan", "viet email xin nghi", "general") == "general"
+    assert CoachService._guard_food_recommendation_intent("recipe_search", "he lo", "greeting") == "greeting"
+    assert CoachService._guard_food_recommendation_intent("meal_plan", "hom nay nen an gi", None) == "meal_plan"
 
 
 def test_dish_recommendation_returns_only_name_and_calories():

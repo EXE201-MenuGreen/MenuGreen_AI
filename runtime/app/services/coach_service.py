@@ -93,6 +93,8 @@ class CoachService:
             "facebook",
             "flutter",
             "laptop gaming",
+            "may tinh",
+            "man hinh",
             "lich da bong",
             "tao anh",
             "dich doan",
@@ -335,6 +337,8 @@ class CoachService:
             "hi",
             "hello",
             "helo",
+            "he lo",
+            "alo",
             "hey",
             "chao",
             "xin chao",
@@ -356,6 +360,8 @@ class CoachService:
         if normalized_text.startswith(("hom nay an j", "hom nay an gi", "toi nay an gi", "sang nay an gi")):
             return "meal_plan"
         if "eat clean" in normalized_text and any(token in normalized_text for token in ("salad", "mon", "nao")):
+            return "recipe_search"
+        if "khong biet nau" in normalized_text and any(token in normalized_text for token in ("mon", "an", "nau")):
             return "recipe_search"
         if re.search(r"^lam\s+.+\b(cho nguoi moi bat dau|de khong|de nau)\b", normalized_text):
             return "recipe_search"
@@ -434,6 +440,8 @@ class CoachService:
                 token in normalized_text for token in ("an gi", "nen an gi")
             ):
                 return "nutrition_calc"
+        elif any(token in normalized_text for token in ("mon", "do an", "bua", "thuc don")):
+            return "meal_plan"
         if has_meal_fragment or has_macro_target_only:
             return "meal_plan"
         if has_meal_signal:
@@ -447,6 +455,190 @@ class CoachService:
         if any(k in normalized_text for k in weather_keywords):
             return "general"
         return None
+
+    @staticmethod
+    def _has_food_recommendation_signal(message: str) -> bool:
+        normalized_text = CoachService._normalize_match_text(message)
+        if not normalized_text:
+            return False
+        direct_food_requests = [
+            "an gi",
+            "an j",
+            "nen an gi",
+            "hom nay an gi",
+            "hom nay nen an gi",
+            "toi nay an gi",
+            "sang nay an gi",
+            "goi y mon",
+            "goi y bua",
+            "goi y do an",
+            "de xuat mon",
+            "tu van mon",
+            "recommend mon",
+            "recommend do an",
+            "rcm mon",
+            "thuc don",
+            "meal plan",
+            "co mon nao",
+            "mon nao",
+            "mon gi",
+            "muon an",
+            "thich an",
+            "toi muon an",
+            "toi thich an",
+        ]
+        cooking_requests = [
+            "cong thuc",
+            "cach nau",
+            "cach lam",
+            "nguyen lieu",
+            "nau sao",
+            "khong biet nau",
+            "biet nau",
+            "lam sao nau",
+            "nau mon",
+            "lam mon",
+        ]
+        meal_context_terms = [
+            "mon",
+            "do an",
+            "bua sang",
+            "bua trua",
+            "bua toi",
+            "com",
+            "bun",
+            "pho",
+            "mi",
+            "chao",
+            "salad",
+            "ga",
+            "ca",
+            "thit",
+            "rau",
+            "trung",
+            "dau hu",
+            "eat clean",
+            "healthy",
+            "giam can",
+            "tang co",
+        ]
+        request_terms = [
+            "goi y",
+            "de xuat",
+            "recommend",
+            "rcm",
+            "nen",
+            "muon",
+            "thich",
+            "tim",
+            "cho toi",
+            "giup toi",
+        ]
+        if any(token in normalized_text for token in direct_food_requests + cooking_requests):
+            return True
+        return any(token in normalized_text for token in meal_context_terms) and any(
+            token in normalized_text for token in request_terms
+        )
+
+    @staticmethod
+    def _has_food_conversation_signal(message: str) -> bool:
+        normalized_text = CoachService._normalize_match_text(message)
+        if not normalized_text:
+            return False
+        non_food_terms = [
+            "email",
+            "facebook",
+            "flutter",
+            "laptop",
+            "may tinh",
+            "man hinh",
+            "game",
+            "xem phim",
+            "lich da bong",
+            "tong thong",
+            "tao anh",
+        ]
+        if any(term in normalized_text for term in non_food_terms):
+            return False
+        if re.search(r"\b(an|uong|nau|mon|bua)\b", normalized_text):
+            return True
+        food_terms = [
+            "do an",
+            "dinh duong",
+            "calo",
+            "kcal",
+            "protein",
+            "carb",
+            "fat",
+            "macro",
+            "vitamin",
+            "chat xo",
+            "duong",
+            "muoi",
+            "dau mo",
+            "do chien",
+            "an khuya",
+            "an vat",
+            "giam can",
+            "tang can",
+            "tang co",
+            "eat clean",
+            "healthy",
+            "keto",
+            "low carb",
+            "bao quan",
+            "che bien",
+            "rau",
+            "thit",
+            "ca",
+            "ga",
+            "trung",
+            "sua",
+            "com",
+            "bun",
+            "pho",
+            "mi",
+            "chao",
+            "salad",
+        ]
+        return any(term in normalized_text for term in food_terms)
+
+    def _generate_food_conversation_with_gemini(self, message: str, context: dict) -> str | None:
+        if not self.settings.gemini_response_fallback_enabled or not self.gemini_pool.is_available():
+            return None
+        totals = context.get("today_totals", {})
+        remaining = context.get("remaining_totals", {})
+        targets = context.get("targets", {})
+        profile = context.get("profile", {})
+        prompt = (
+            "Bạn là AI Coach dinh dưỡng của MenuGreen.\n"
+            "Trả lời câu hỏi liên quan tới món ăn, thói quen ăn uống, nấu nướng hoặc dinh dưỡng bằng tiếng Việt, ngắn gọn và thực tế.\n"
+            "Nếu user không hỏi gợi ý món cụ thể, không tự bịa danh sách món từ database.\n"
+            "Nếu câu hỏi có yếu tố y khoa, nhắc user hỏi chuyên gia y tế khi cần.\n\n"
+            "Ngữ cảnh người dùng nếu liên quan:\n"
+            f"- Mục tiêu: {profile.get('goal', profile.get('Goal', 'maintain'))}\n"
+            f"- Đã nạp hôm nay: {totals.get('calories_kcal', 0)} kcal\n"
+            f"- Còn lại hôm nay: {remaining.get('calories_kcal', 0)} kcal\n"
+            f"- Mục tiêu ngày: {targets.get('calories_kcal', 0)} kcal\n\n"
+            f"Câu hỏi của user: {message.strip()}\n"
+        )
+        return self._invoke_gemini_text(prompt, cache_namespace="food-conversation")
+
+    @staticmethod
+    def _guard_food_recommendation_intent(
+        intent: str,
+        message: str,
+        heuristic_intent: str | None,
+    ) -> str:
+        if intent not in {"meal_plan", "recipe_search"}:
+            return intent
+        if heuristic_intent in {"greeting", "general", "ai_search", "nutrition_calc"}:
+            return heuristic_intent
+        if heuristic_intent in {"meal_plan", "recipe_search"}:
+            return heuristic_intent
+        if CoachService._has_food_recommendation_signal(message):
+            return intent
+        return "general"
 
     @staticmethod
     def _normalize_match_text(message: str) -> str:
@@ -1434,16 +1626,17 @@ class CoachService:
                 intent = contextual_intent or heuristic_intent or "general"
             elif intent in ("unknown", ""):
                 intent = contextual_intent or heuristic_intent or "general"
-            elif contextual_intent and is_short_followup:
-                intent = contextual_intent
             elif heuristic_intent == "greeting":
                 intent = "greeting"
+            elif contextual_intent and is_short_followup:
+                intent = contextual_intent
             elif heuristic_intent == "meal_plan" and intent in ("general", "recipe_search", "nutrition_calc"):
                 intent = "meal_plan"
             elif heuristic_intent == "recipe_search" and intent in ("general", "meal_plan", "nutrition_calc"):
                 intent = "recipe_search"
             elif heuristic_intent == "nutrition_calc" and intent in ("general", "meal_plan", "recipe_search", "calorie_lookup"):
                 intent = "nutrition_calc"
+            intent = self._guard_food_recommendation_intent(intent, request.message, heuristic_intent)
             response_text, route_flags = self._compose_contextual_response(
                 intent,
                 context,
@@ -1455,6 +1648,7 @@ class CoachService:
             confidence = round(score, 4)
         else:
             intent = contextual_intent or heuristic_intent or "general"
+            intent = self._guard_food_recommendation_intent(intent, request.message, heuristic_intent)
             response_text, route_flags = self._compose_contextual_response(
                 intent,
                 context,
@@ -1678,6 +1872,15 @@ class CoachService:
             )
 
         if intent in ("general", "unknown"):
+            if self._has_food_conversation_signal(message):
+                gemini_response = self._generate_food_conversation_with_gemini(message, context)
+                if gemini_response:
+                    return gemini_response, ["gemini-food-conversation"]
+                return (
+                    "Câu này vẫn thuộc phạm vi ăn uống/dinh dưỡng, nhưng hiện Gemini chưa phản hồi được. "
+                    "Bạn hỏi lại cụ thể hơn một chút nhé, ví dụ về calo, cách ăn, cách nấu hoặc lựa chọn món.",
+                    ["food-conversation-fallback"],
+                )
             return (
                 "Xin lỗi, câu hỏi này nằm ngoài phạm vi hỗ trợ hiện tại của AI Coach. "
                 "Mình đang tập trung vào món ăn, dinh dưỡng, thực đơn và truy vấn công thức. "
