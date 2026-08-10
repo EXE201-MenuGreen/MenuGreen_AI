@@ -329,3 +329,41 @@ def test_worker_reply_overrides_wrong_onnx_intent_and_uses_request_context():
     assert "còn khoảng 1250 kcal" in result.response
     assert result.context_summary["targets"]["calories_kcal"] == 1750
 
+
+def test_food_conversation_signal_differentiates_domain():
+    # Thử các câu hỏi về ăn uống, dinh dưỡng không mang tính chất gọi món
+    assert CoachService._has_food_conversation_signal("ăn khuya có tốt không")
+    assert CoachService._has_food_conversation_signal("đồ chiên có hại không")
+    assert CoachService._has_food_conversation_signal("uống nước trước bữa ăn được không")
+    assert CoachService._has_food_conversation_signal("keto là chế độ ăn như thế nào")
+
+    # Thử các câu ngoài luồng
+    assert not CoachService._has_food_conversation_signal("viết email xin nghỉ giúp tôi")
+    assert not CoachService._has_food_conversation_signal("mua laptop gaming ở đâu")
+    assert not CoachService._has_food_conversation_signal("ai là tổng thống mỹ")
+
+
+def test_general_intent_routes_to_food_conversation_fallback_when_gemini_unavailable():
+    service = build_service()
+    service.settings = SimpleNamespace(gemini_response_fallback_enabled=True)
+    service.gemini_pool = SimpleNamespace(is_available=lambda: False)
+    
+    # Nếu Gemini không sẵn sàng, câu hỏi đồ ăn vào general intent phải trả về fallback riêng
+    response, flags = service._compose_contextual_response(
+        "general",
+        build_context(),
+        "ăn khuya có mập không",
+    )
+    assert "thuộc phạm vi ăn uống/dinh dưỡng, nhưng hiện Gemini chưa phản hồi được" in response
+    assert "food-conversation-fallback" in flags
+
+    # Câu ngoài luồng vẫn từ chối bình thường
+    response_out, flags_out = service._compose_contextual_response(
+        "general",
+        build_context(),
+        "chơi game fps bị giật",
+    )
+    assert "nằm ngoài phạm vi hỗ trợ" in response_out
+    assert not flags_out
+
+
