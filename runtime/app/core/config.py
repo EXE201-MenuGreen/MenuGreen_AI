@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     # Fallback LLM (phase 2 wiring)
     google_api_key: str = ""
     google_api_keys: str = ""
-    llm_model: str = "gemini-2.5-flash"
+    llm_model: str = "gemini-flash-latest"
     embedding_model: str = "models/gemini-embedding-001"
     gemini_query_rewrite_enabled: bool = True
     gemini_response_fallback_enabled: bool = True
