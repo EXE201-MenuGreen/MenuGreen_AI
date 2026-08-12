@@ -1124,12 +1124,15 @@ class CoachService:
         return lines
 
     def _invoke_gemini_text(self, prompt: str, cache_namespace: str) -> str | None:
-        return self.gemini_pool.invoke_text(
+        result = self.gemini_pool.invoke_text(
             prompt=prompt,
             model=self.settings.llm_model,
             temperature=0.2,
             cache_namespace=cache_namespace,
         )
+        if result:
+            result = result.replace("**", "")
+        return result
 
     @staticmethod
     def _is_hard_query(message: str, base_query: str = "") -> bool:
@@ -1327,15 +1330,29 @@ class CoachService:
         if not self.settings.gemini_response_fallback_enabled or not self.gemini_pool.is_available():
             return None
         remaining = context.get("remaining_totals", {})
+
+        fallback_items = self.repo.suggest_meal_plan_items(
+            remaining_kcal=float(remaining.get("calories_kcal", 0) or 0),
+            remaining_protein=float(remaining.get("protein_g", 0) or 0),
+            remaining_carbs=float(remaining.get("carbs_g", 0) or 0),
+            remaining_fat=float(remaining.get("fat_g", 0) or 0),
+            limit=5,
+        )
+        db_suggestions = ", ".join(
+            [f"{item.get('name_vi') or item.get('name_en')} ({item.get('calories_kcal', 0)} kcal)" for item in fallback_items]
+        ) if fallback_items else "Không có"
+
         prompt = (
             "Bạn là AI Coach dinh dưỡng cho app MenuGreen.\n"
             "Hãy trả lời NGẮN bằng tiếng Việt, tối đa 4 câu.\n"
-            "Mục tiêu: khi DB chưa có món khớp, vẫn gợi ý hướng ăn uống thực tế và nói rõ đây là gợi ý AI.\n"
-            "Không bịa như thể có dữ liệu DB. Không chẩn đoán y khoa. Không nói quá chắc chắn.\n"
+            "Mục tiêu: khi user hỏi món mà hệ thống chưa tìm thấy, hãy GỢI Ý MỘT SỐ MÓN CÓ SẴN TRONG DB dưới đây để thay thế.\n"
+            "Tuyệt đối KHÔNG tự chế ra tên món ăn. Hãy LỰA CHỌN TỪ DANH SÁCH 'Món ăn có sẵn trong DB' dưới đây và DÙNG CHÍNH XÁC TÊN CỦA CHÚNG để App quét được dễ dàng.\n"
+            "Không chẩn đoán y khoa. Không nói quá chắc chắn.\n"
             f"User message: {message.strip()}\n"
             f"Remaining calories today: {remaining.get('calories_kcal', 0)}\n"
             f"Remaining protein/carbs/fat: {remaining.get('protein_g', 0)}/{remaining.get('carbs_g', 0)}/{remaining.get('fat_g', 0)}\n"
-            "Hãy gợi ý 1-2 hướng món hoặc nhóm thực phẩm dễ áp dụng."
+            f"Món ăn có sẵn trong DB (đã lọc theo calo): {db_suggestions}\n"
+            "Hãy khuyên dùng 1-2 món phù hợp nhất từ danh sách trên."
         )
         return self._invoke_gemini_text(prompt, cache_namespace="recipe-fallback")
 
