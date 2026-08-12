@@ -365,6 +365,15 @@ class CoachService:
             return "recipe_search"
         if re.search(r"^lam\s+.+\b(cho nguoi moi bat dau|de khong|de nau)\b", normalized_text):
             return "recipe_search"
+        dish_lookup_terms = (
+            "ga", "uc ga", "ca", "thit", "bo", "heo", "tom", "muc",
+            "trung", "com", "bun", "pho", "mi", "chao", "salad",
+            "rau", "dau hu", "sua",
+        )
+        if re.search(r"^(mon|mon an)\s+.+", normalized_text) and any(
+            token in normalized_text for token in dish_lookup_terms
+        ):
+            return "recipe_search"
 
         has_recipe_signal = (
             any(k in normalized_text for k in recipe_keywords)
@@ -895,7 +904,7 @@ class CoachService:
         if not self.gemini_pool.is_available():
             title = page.get("title") or url
             return (
-                f"Mình đã đọc được link recipe này: {title}. Hiện server chưa bật Gemini nên mình chưa phân tích sâu ingredient và steps tự động được.",
+                f"Mình đã đọc được link recipe này: {title}. Hiện AI local chưa sẵn sàng để phân tích sâu ingredient và steps tự động.",
                 ["url-fetched"],
             )
 
@@ -919,7 +928,7 @@ class CoachService:
         if not text:
             title = page.get("title") or url
             return (
-                f"Mình đã mở được link này: {title}, nhưng Gemini chưa trả về phân tích lúc này. Bạn thử lại sau hoặc gửi thêm tên món giúp mình.",
+                f"Mình đã mở được link này: {title}, nhưng AI local chưa trả về phân tích lúc này. Bạn thử lại sau hoặc gửi thêm tên món giúp mình.",
                 ["url-fetched", "gemini-fallback-failed"],
             )
         return text, ["recipe-link", "gemini-url-analysis"]
@@ -947,7 +956,27 @@ class CoachService:
             flags=re.IGNORECASE,
         )
         cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,.-\t")
+        if CoachService._is_generic_recipe_query(cleaned, text):
+            return ""
         return cleaned or text
+
+    @staticmethod
+    def _is_generic_recipe_query(query: str, message: str) -> bool:
+        normalized_query = CoachService._normalize_match_text(query)
+        normalized_message = CoachService._normalize_match_text(message)
+        generic_queries = {
+            "",
+            "an",
+            "mon an",
+            "nau an",
+            "cong thuc",
+            "cong thuc nau an",
+            "recipe",
+        }
+        return normalized_query in generic_queries and any(
+            token in normalized_message
+            for token in ("goi y", "de xuat", "recommend", "rcm", "cong thuc", "cach nau", "recipe")
+        )
 
     @staticmethod
     def _extract_preference_query(message: str) -> str:
@@ -1877,7 +1906,7 @@ class CoachService:
                 if gemini_response:
                     return gemini_response, ["gemini-food-conversation"]
                 return (
-                    "Câu này vẫn thuộc phạm vi ăn uống/dinh dưỡng, nhưng hiện Gemini chưa phản hồi được. "
+                    "Câu này vẫn thuộc phạm vi ăn uống/dinh dưỡng, nhưng hiện AI local chưa phản hồi được. "
                     "Bạn hỏi lại cụ thể hơn một chút nhé, ví dụ về calo, cách ăn, cách nấu hoặc lựa chọn món.",
                     ["food-conversation-fallback"],
                 )

@@ -98,6 +98,7 @@ def test_natural_food_suggestion_phrasing_stays_in_food_domain():
 def test_recipe_words_select_recipe_mode():
     assert CoachService._heuristic_intent("recommend món ăn và công thức") == "recipe_search"
     assert CoachService._heuristic_intent("cách nấu cơm gà áp chảo") == "recipe_search"
+    assert CoachService._heuristic_intent("món ức gà") == "recipe_search"
 
 
 def test_food_recommendation_requires_food_domain_signal():
@@ -348,13 +349,13 @@ def test_general_intent_routes_to_food_conversation_fallback_when_gemini_unavail
     service.settings = SimpleNamespace(gemini_response_fallback_enabled=True)
     service.gemini_pool = SimpleNamespace(is_available=lambda: False)
     
-    # Nếu Gemini không sẵn sàng, câu hỏi đồ ăn vào general intent phải trả về fallback riêng
+    # Nếu AI local không sẵn sàng, câu hỏi đồ ăn vào general intent phải trả về fallback riêng
     response, flags = service._compose_contextual_response(
         "general",
         build_context(),
         "ăn khuya có mập không",
     )
-    assert "thuộc phạm vi ăn uống/dinh dưỡng, nhưng hiện Gemini chưa phản hồi được" in response
+    assert "thuộc phạm vi ăn uống/dinh dưỡng, nhưng hiện AI local chưa phản hồi được" in response
     assert "food-conversation-fallback" in flags
 
     # Câu ngoài luồng vẫn từ chối bình thường
