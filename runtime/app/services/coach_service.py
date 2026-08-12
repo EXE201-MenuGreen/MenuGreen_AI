@@ -566,11 +566,45 @@ class CoachService:
             "lich da bong",
             "tong thong",
             "tao anh",
+            "thoi tiet",
+            "chung khoan",
+            "co phieu",
+            "bitcoin",
+            "crypto",
+            "tin tuc",
+            "chinh tri",
+            "phap luat",
+            "gia vang",
+            "xo so",
+            "lo de",
+            "bai tap",
+            "toan hoc",
+            "vat ly",
+            "lap trinh",
+            "code",
+            "ai tao ra",
+            "ban la ai",
+            "ten ban la gi",
+            "truyen ma",
+            "ke chuyen",
+            "bong da",
+            "thoi trang",
+            "my pham",
+            "xe may",
+            "xe hoi",
+            "hat",
+            "nghe nhac",
+            "an trom",
+            "an cap",
+            "an va",
+            "an dam",
+            "an may",
+            "an xin",
+            "danh nhau",
+            "chui nhau",
         ]
         if any(term in normalized_text for term in non_food_terms):
             return False
-        if re.search(r"\b(an|uong|nau|mon|bua)\b", normalized_text):
-            return True
         food_terms = [
             "do an",
             "dinh duong",
@@ -609,6 +643,13 @@ class CoachService:
             "mi",
             "chao",
             "salad",
+            "nau an",
+            "mon an",
+            "bua an",
+            "uong nuoc",
+            "thuc don",
+            "cong thuc",
+            "cach nau",
         ]
         return any(term in normalized_text for term in food_terms)
 
@@ -623,7 +664,8 @@ class CoachService:
             "Bạn là AI Coach dinh dưỡng của MenuGreen.\n"
             "Trả lời câu hỏi liên quan tới món ăn, thói quen ăn uống, nấu nướng hoặc dinh dưỡng bằng tiếng Việt, ngắn gọn và thực tế.\n"
             "Nếu user không hỏi gợi ý món cụ thể, không tự bịa danh sách món từ database.\n"
-            "Nếu câu hỏi có yếu tố y khoa, nhắc user hỏi chuyên gia y tế khi cần.\n\n"
+            "Nếu câu hỏi có yếu tố y khoa, nhắc user hỏi chuyên gia y tế khi cần.\n"
+            "QUAN TRỌNG: Nếu câu hỏi NẰM NGOÀI phạm vi ăn uống, dinh dưỡng, giảm cân, hoặc sức khỏe (ví dụ hỏi thời tiết, chính trị, viết code, làm toán, kể chuyện, tán gẫu không liên quan...), HÃY TỪ CHỐI lịch sự và nhắc lại bạn chỉ hỗ trợ dinh dưỡng.\n\n"
             "Ngữ cảnh người dùng nếu liên quan:\n"
             f"- Mục tiêu: {profile.get('goal', profile.get('Goal', 'maintain'))}\n"
             f"- Đã nạp hôm nay: {totals.get('calories_kcal', 0)} kcal\n"
