@@ -963,7 +963,6 @@ class CoachService:
     @staticmethod
     def _is_generic_recipe_query(query: str, message: str) -> bool:
         normalized_query = CoachService._normalize_match_text(query)
-        normalized_message = CoachService._normalize_match_text(message)
         generic_queries = {
             "",
             "an",
@@ -972,11 +971,12 @@ class CoachService:
             "cong thuc",
             "cong thuc nau an",
             "recipe",
+            "an gi",
+            "hom nay an gi",
         }
-        return normalized_query in generic_queries and any(
-            token in normalized_message
-            for token in ("goi y", "de xuat", "recommend", "rcm", "cong thuc", "cach nau", "recipe")
-        )
+        if normalized_query in generic_queries:
+            return True
+        return False
 
     @staticmethod
     def _extract_preference_query(message: str) -> str:
@@ -1861,8 +1861,9 @@ class CoachService:
                 kcal = best_item.get("calories_kcal", "?")
                 detail = self._format_recipe_detail(best_item) if best_item.get("instructions") else ""
                 suggestion_text = f"{name} ({kcal} kcal{detail})"
+                prefix = f"Theo món '{display_query}', mình gợi ý" if query else "Mình gợi ý"
                 return (
-                    f"Theo món '{display_query}', mình gợi ý 1 món chính: {suggestion_text}. "
+                    f"{prefix} 1 món chính: {suggestion_text}. "
                     f"Hôm nay bạn đang ở mức {totals.get('calories_kcal', 0)} kcal "
                     f"và còn {remaining.get('calories_kcal', 0)} kcal cho ngày hôm nay.",
                     hybrid_flags,
@@ -1875,8 +1876,9 @@ class CoachService:
                 hybrid_flags.append("gemini-fallback")
                 return gemini_fallback, hybrid_flags
 
+            prefix = f"Theo món '{display_query}', mình tạm gợi ý" if query else "Mình tạm gợi ý"
             return (
-                f"Theo món '{display_query}', mình tạm gợi ý mặc định: trứng luộc + rau luộc. "
+                f"{prefix} mặc định: trứng luộc + rau luộc. "
                 f"Hôm nay bạn đang ở mức {totals.get('calories_kcal', 0)} kcal "
                 f"và còn {remaining.get('calories_kcal', 0)} kcal cho ngày hôm nay.",
                 hybrid_flags,
