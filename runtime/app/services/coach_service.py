@@ -986,13 +986,15 @@ class CoachService:
             r"^(công thức|cong thuc|cách nấu|cach nau|làm|lam|nấu|nau)\s+",
             r"^(tìm|tim|gợi ý|goi y|tra cứu|tra cuu)\s+(món|mon|công thức|cong thuc|recipe)\s+",
             r"^(recommend|rcm)\s+(món|mon|công thức|cong thuc|recipe)?\s*",
-            r"^(gợi ý|goi y|tìm|tim)\s+",
+            r"^(gợi ý|goi y|tìm|tim|cho mình|cho minh|cho t|cho tôi)\s+",
+            r"^(t thèm ăn|thèm ăn|them an|tôi thèm|toi them|tôi muốn|toi muon|t muốn|t muon|muốn ăn|muon an)\s+(món|mon)?\s*",
+            r"^(hướng dẫn|huong dan|chỉ cách|chi cach)\s+(làm|lam|nấu|nau)?\s+",
         ]
         for pattern in prefixes:
             cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE).strip()
 
         cleaned = re.sub(
-            r"\b(công thức|cong thuc|cách nấu|cach nau|recipe|món|mon|nấu|nau|làm|lam|tìm|tim|gợi ý|goi y|recommend|rcm|cho|của|cua|về|ve)\b",
+            r"\b(công thức|cong thuc|cách nấu|cach nau|recipe|món|mon|nấu|nau|làm|lam|tìm|tim|gợi ý|goi y|recommend|rcm|cho|của|cua|về|ve|đc ko|được không|duoc khong|nhỉ|nhi|quá à|qua a)\b",
             " ",
             cleaned,
             flags=re.IGNORECASE,
@@ -1163,7 +1165,6 @@ class CoachService:
             self.settings.gemini_response_fallback_enabled
             and self.gemini_pool.is_available()
             and best_item is None
-            and self._is_hard_query(message, message)
         )
 
     def _score_meal_plan_candidate(
@@ -1878,13 +1879,27 @@ class CoachService:
                         display_query = rewritten_query
                         hybrid_flags.append("gemini-rewrite")
                         break
+                
+                if not recipe_candidates and not food_candidates and rewritten_queries:
+                    query = rewritten_queries[0]
+                    display_query = rewritten_queries[0]
 
+            is_fallback = False
             best_item = None
             if recipe_candidates:
                 best_item = sorted(recipe_candidates, key=lambda row: self._score_recipe_row(row, query, last_recommended_name))[0]
             elif food_candidates:
                 best_item = sorted(food_candidates, key=lambda row: self._score_recipe_row(row, query, last_recommended_name))[0]
+
+            gemini_fallback = None
+            if self._should_try_gemini_fallback(message, best_item):
+                gemini_fallback = self._generate_recipe_fallback_with_gemini(message, context)
+            if gemini_fallback:
+                hybrid_flags.append("gemini-fallback")
+                return gemini_fallback, hybrid_flags
+
             if not best_item:
+                is_fallback = True
                 fallback_items = self.repo.suggest_meal_plan_items(
                     remaining_kcal=float(remaining.get("calories_kcal", 0) or 0),
                     remaining_protein=float(remaining.get("protein_g", 0) or 0),
@@ -1894,6 +1909,7 @@ class CoachService:
                 )
                 best_item = fallback_items[0] if fallback_items else None
             if not best_item:
+                is_fallback = True
                 active_pool = self.repo.list_active_recipes(limit=5) + self.repo.list_active_foods(limit=5)
                 if active_pool:
                     best_item = sorted(active_pool, key=lambda row: self._score_recipe_row(row, query, last_recommended_name))[0]
@@ -1903,20 +1919,18 @@ class CoachService:
                 kcal = best_item.get("calories_kcal", "?")
                 detail = self._format_recipe_detail(best_item) if best_item.get("instructions") else ""
                 suggestion_text = f"{name} ({kcal} kcal{detail})"
-                prefix = f"Theo món '{display_query}', mình gợi ý" if query else "Mình gợi ý"
+                
+                if is_fallback and display_query:
+                    prefix = f"Hiện chưa có '{display_query}', mình gợi ý tạm"
+                else:
+                    prefix = f"Theo món '{display_query}', mình gợi ý" if query else "Mình gợi ý"
+                    
                 return (
                     f"{prefix} 1 món chính: {suggestion_text}. "
                     f"Hôm nay bạn đang ở mức {totals.get('calories_kcal', 0)} kcal "
                     f"và còn {remaining.get('calories_kcal', 0)} kcal cho ngày hôm nay.",
                     hybrid_flags,
                 )
-
-            gemini_fallback = None
-            if self._should_try_gemini_fallback(message, best_item):
-                gemini_fallback = self._generate_recipe_fallback_with_gemini(message, context)
-            if gemini_fallback:
-                hybrid_flags.append("gemini-fallback")
-                return gemini_fallback, hybrid_flags
 
             prefix = f"Theo món '{display_query}', mình tạm gợi ý" if query else "Mình tạm gợi ý"
             return (
