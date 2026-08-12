@@ -1945,10 +1945,11 @@ class CoachService:
             )
 
         if intent in ("general", "unknown"):
+            gemini_response = self._generate_food_conversation_with_gemini(message, context)
+            if gemini_response:
+                return gemini_response, ["gemini-food-conversation"]
+
             if self._has_food_conversation_signal(message):
-                gemini_response = self._generate_food_conversation_with_gemini(message, context)
-                if gemini_response:
-                    return gemini_response, ["gemini-food-conversation"]
                 return (
                     "Câu này vẫn thuộc phạm vi ăn uống/dinh dưỡng, nhưng hiện AI local chưa phản hồi được. "
                     "Bạn hỏi lại cụ thể hơn một chút nhé, ví dụ về calo, cách ăn, cách nấu hoặc lựa chọn món.",
