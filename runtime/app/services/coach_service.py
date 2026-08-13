@@ -667,7 +667,7 @@ class CoachService:
             "Nếu câu hỏi có yếu tố y khoa, nhắc user hỏi chuyên gia y tế khi cần.\n"
             "QUAN TRỌNG: Nếu câu hỏi NẰM NGOÀI phạm vi ăn uống, dinh dưỡng, giảm cân, hoặc sức khỏe (ví dụ hỏi thời tiết, chính trị, viết code, làm toán, kể chuyện, tán gẫu không liên quan...), HÃY TỪ CHỐI lịch sự và nhắc lại bạn chỉ hỗ trợ dinh dưỡng.\n\n"
             "Ngữ cảnh người dùng nếu liên quan:\n"
-            f"- Mục tiêu: {profile.get('goal', profile.get('Goal', 'maintain'))}\n"
+            f"- Mục tiêu: {{'maintain': 'Duy trì cân nặng', 'lose_weight': 'Giảm cân', 'gain_weight': 'Tăng cân', 'gain_muscle': 'Tăng cơ'}}.get(str(profile.get('goal', profile.get('Goal', 'maintain'))).strip().lower(), 'Duy trì cân nặng')\n"
             f"- Đã nạp hôm nay: {totals.get('calories_kcal', 0)} kcal\n"
             f"- Còn lại hôm nay: {remaining.get('calories_kcal', 0)} kcal\n"
             f"- Mục tiêu ngày: {targets.get('calories_kcal', 0)} kcal\n\n"
@@ -1804,7 +1804,8 @@ class CoachService:
         remaining = context.get("remaining_totals", {})
         targets = context.get("targets", {})
         profile = context.get("profile", {})
-        goal = profile.get("goal") or "maintain"
+        goal_raw = str(profile.get("goal") or "maintain").strip().lower()
+        goal = {"maintain": "duy trì cân nặng", "lose_weight": "giảm cân", "gain_weight": "tăng cân", "gain_muscle": "tăng cơ"}.get(goal_raw, "duy trì cân nặng")
         normalized_text = CoachService._normalize_match_text(message)
 
         if intent in ("nutrition_calc", "calorie_lookup"):

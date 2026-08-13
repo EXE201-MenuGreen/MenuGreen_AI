@@ -393,7 +393,7 @@ def get_ai_suggestions(user_id: str) -> list[str]:
         prompt = f"""
         Bạn là AI Coach Dinh dưỡng cho ứng dụng MenuGreen.
         Dựa trên thông tin dinh dưỡng của người dùng hôm nay:
-        - Mục tiêu: {profile.get("goal_mode") or "Dinh dưỡng cân bằng"}
+        - Mục tiêu: {{"maintain": "Duy trì cân nặng", "lose_weight": "Giảm cân", "gain_weight": "Tăng cân", "gain_muscle": "Tăng cơ"}}.get(str(profile.get("goal_mode") or "").strip().lower(), "Duy trì cân nặng")
         - Chiều cao: {profile.get("height_cm")} cm, Cân nặng: {profile.get("weight_kg")} kg
         - Calo mục tiêu: {nutritional_target.get("calories_kcal")} kcal
         - Thực tế đã nạp: {actual_intake.get("calories_kcal")} kcal (Protein: {actual_intake.get("protein_g")}g, Carbs: {actual_intake.get("carbs_g")}g, Fat: {actual_intake.get("fat_g")}g)
@@ -468,7 +468,7 @@ def get_conversation_suggestions(request: ConversationSuggestionsRequest) -> lis
         profile = context_dict.get("user_profile") or {}
         prompt = f"""
         Bạn là AI Coach Dinh dưỡng cho ứng dụng MenuGreen.
-        Dựa trên hồ sơ người dùng (Mục tiêu: {profile.get("goal_mode") or "Dinh dưỡng cân bằng"}) và lịch sử cuộc trò chuyện gần nhất dưới đây:
+        Dựa trên hồ sơ người dùng (Mục tiêu: {{"maintain": "Duy trì cân nặng", "lose_weight": "Giảm cân", "gain_weight": "Tăng cân", "gain_muscle": "Tăng cơ"}}.get(str(profile.get("goal_mode") or "").strip().lower(), "Duy trì cân nặng")) và lịch sử cuộc trò chuyện gần nhất dưới đây:
 
         LỊCH SỬ TRÒ CHUYỆN:
         {history_str}
